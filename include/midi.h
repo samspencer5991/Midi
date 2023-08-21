@@ -10,10 +10,6 @@
 #include "usart.h"
 #include "stdint.h"
 
-#ifdef USE_MIDI_TRIGGERS
-//#include "midi_trigger.h"
-#endif
-
 #define MIDI_CHANNEL_OMNI     0
 #define MIDI_CHANNEL_OFF     	17 // and over
 #define NULL_BYTE 0
@@ -365,10 +361,10 @@ typedef struct MidiInterface
 typedef struct
 {
 	MidiClockState state;
-	MidiInterface* midiHandles[NUM_MIDI_INTERFACES];
+	MidiInterface** midiHandles;
 	MidiClockSubDivision subDivision;
 	uint16_t bpm;
-#ifdef USE_MIDI_CLOCK
+#ifdef FRAMEWORK_STM32CUBE
 	TIM_HandleTypeDef* clockTim;
 #endif
 	uint16_t tapIntervals[NUM_TAP_INTERVALS];
@@ -461,18 +457,18 @@ void midi_setHandleControlChange(MidiInterface *midiHandle, void (*fptr)(void* m
 void midi_setHandleProgramChange(MidiInterface *midiHandle, void (*fptr)(void* midiHandle, uint8_t  channel, uint8_t  number));
 void midi_setHandleSystemExclusive(MidiInterface *midiHandle, void (*fptr)(void* midiHandle, uint16_t size));
 
-void midi_setHandleAfterTouchchannel(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  Channel, uint8_t  pressure));
-void midi_setHandlePitchBend(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  Channel, int bend));
-void midi_setHandleTimeCodeQuarterFrame(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  data));
-void midi_setHandleSongPosition(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, unsigned beats));
-void midi_setHandleSongSelect(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  songnumber));
-void midi_setHandleTuneRequest(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleClock(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleStart(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleContinue(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleStop(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleActiveSensing(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
-void midi_setHandleSystemReset(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle));
+void midi_setHandleAfterTouchchannel(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t Channel, uint8_t pressure));
+void midi_setHandlePitchBend(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t Channel, int bend));
+void midi_setHandleTimeCodeQuarterFrame(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  data));
+void midi_setHandleSongPosition(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint16_t beats));
+void midi_setHandleSongSelect(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t songnumber));
+void midi_setHandleTuneRequest(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleClock(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleStart(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleContinue(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleStop(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleActiveSensing(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
+void midi_setHandleSystemReset(MidiInterface* midiHandle, void (*fptr)(void* midiHandle));
 
 void midi_disconnectCallbackFromType(MidiInterface* midiHandle, MidiDataType inType);
 

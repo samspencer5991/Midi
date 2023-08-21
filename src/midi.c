@@ -28,6 +28,7 @@
 
 uint32_t sysExId = 0;
 uint8_t midiInChannel;	// MIDI in channel is set to omni by default
+uint8_t numMidiInterfaces = 0;
 
 /*	PRIVATE FUNCTION PROTOTYPES			*/
 /* MIDI DATA PFP*/
@@ -66,7 +67,7 @@ void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
 		midiClock->tapIntervals[i] = 0;
 	}
 
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		midiClock->midiHandles[i] = NULL;
 	}
@@ -82,7 +83,7 @@ void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
 MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** midiHandles, uint8_t numHandles)
 {
 	// Ensure there is enough space to store the handle
-	if(numHandles > NUM_MIDI_INTERFACES || midiHandles == NULL || midiClock == NULL)
+	if(numHandles > numMidiInterfaces || midiHandles == NULL || midiClock == NULL)
 	{
 		return MidiParamError;
 	}
@@ -119,7 +120,7 @@ void midi_clockStart(MidiClockTx* midiClock)
 {
 	midiClock->state = MidiClockRunning;
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		if(midiClock->midiHandles[i] == NULL)
 		{
@@ -135,7 +136,7 @@ void midi_clockStop(MidiClockTx* midiClock)
 {
 	midiClock->state = MidiClockStopped;
 	HAL_TIM_Base_Stop_IT(midiClock->clockTim);
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		if(midiClock->midiHandles[i] == NULL)
 		{
@@ -148,7 +149,7 @@ void midi_clockStop(MidiClockTx* midiClock)
 void midi_clockSendStop(MidiClockTx* midiClock)
 {
 	midiClock->state = MidiClockStopped;
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		if(midiClock->midiHandles[i] == NULL)
 		{
@@ -162,7 +163,7 @@ void midi_clockSendStart(MidiClockTx* midiClock)
 {
 	midiClock->state = MidiClockRunning;
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		if(midiClock->midiHandles[i] == NULL)
 		{
@@ -174,7 +175,7 @@ void midi_clockSendStart(MidiClockTx* midiClock)
 
 void midi_clockSend(MidiClockTx* midiClock)
 {
-	for(uint8_t i = 0; i<NUM_MIDI_INTERFACES; i++)
+	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
 		if(midiClock->midiHandles[i] != NULL && midiClock->midiHandles[i]->active)
 		{
@@ -245,11 +246,6 @@ void midi_turnOffMidiClock(MidiClockTx* midiClock)
 
 // --------------- Init and Config --------------- //
 
-/**
-  * @brief
-  * @param none
-  * @retval None
-  */
 MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHandle, MidiDeviceType type,
 		MidiChannel setChannel, MidiInterfaceDirection direction, uint8_t* ptrRxBuf,
 		uint16_t size, IRQn_Type irq)
@@ -314,15 +310,10 @@ MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHan
 	midiHandle->mStopCallback = NULL;
 	midiHandle->mActiveSensingCallback = NULL;
 	midiHandle->mSystemResetCallback = NULL;
-
+	numMidiInterfaces++;
 	return MidiOk;
 }
 
-/**
-  * @brief	Initialises the uart port to listen for data. This should be called only once all callback handlers have been assigned.
-  * @param 	*uartHandle Uart handle to initialize
-  * @retval Errorstate
-  */
 MidiErrorState midi_begin(MidiInterface* midiHandle)
 {
 	midiHandle->active = TRUE;
@@ -352,7 +343,6 @@ MidiErrorState midi_begin(MidiInterface* midiHandle)
 	}
 	return MidiOk;
 }
-
 
 MidiErrorState midi_assignSysExId(uint32_t id)
 {
@@ -511,7 +501,7 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 					break;
 				}
 				uint8_t thruPacket[] = {status, d1, d2};
-				for(int i=0; i<NUM_MIDI_INTERFACES; i++)
+				for(int i=0; i<numMidiInterfaces; i++)
 				{
 					if(midiHandle->thruHandles[i] != NULL && midiHandle->numThruHandles > 0 && midiHandle->thruHandles[i]->active)
 					{
@@ -647,7 +637,7 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 					thruPacket[0] = status;
 					break;
 				}
-				for(int i=0; i<NUM_MIDI_INTERFACES; i++)
+				for(int i=0; i<numMidiInterfaces; i++)
 				{
 					if(midiHandle->thruHandles[i] != NULL && midiHandle->numThruHandles > 0 && midiHandle->thruHandles[i]->active)
 					{
@@ -670,7 +660,7 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 				midiHandle->newMessage = FALSE;
 			}
 		}
-		for(int i=0; i<NUM_MIDI_INTERFACES; i++)
+		for(int i=0; i<numMidiInterfaces; i++)
 		{
 			// Check that the thru handle is valid
 			if( midiHandle->thruHandles[i] != NULL && midiHandle->thruHandles[i]->active
@@ -978,62 +968,62 @@ void midi_setHandleProgramChange(MidiInterface *midiHandle, void (*fptr)(void* m
 	midiHandle->mProgramChangeCallback = fptr;
 }
 
-void midi_setHandleAfterTouchchannel(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  Channel, uint8_t  pressure))
+void midi_setHandleAfterTouchchannel(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  Channel, uint8_t  pressure))
 {
 	midiHandle->mAfterTouchchannelCallback = fptr;
 }
 
-void midi_setHandlePitchBend(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  Channel, int bend))
+void midi_setHandlePitchBend(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  Channel, int bend))
 {
 	midiHandle->mPitchBendCallback = fptr;
 }
 
-void midi_setHandleTimeCodeQuarterFrame(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  data))
+void midi_setHandleTimeCodeQuarterFrame(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  data))
 {
 	midiHandle->mTimeCodeQuarterFrameCallback = fptr;
 }
 
-void midi_setHandleSongPosition(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, unsigned beats))
+void midi_setHandleSongPosition(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint16_t beats))
 {
 	midiHandle->mSongPositionCallback = fptr;
 }
 
-void midi_setHandleSongSelect(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle, uint8_t  songnumber))
+void midi_setHandleSongSelect(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  songnumber))
 {
 	midiHandle->mSongSelectCallback = fptr;
 }
 
-void midi_setHandleTuneRequest(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleTuneRequest(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mTuneRequestCallback = fptr;
 }
 
-void midi_setHandleClock(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleClock(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mClockCallback = fptr;
 }
 
-void midi_setHandleStart(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleStart(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mStartCallback = fptr;
 }
 
-void midi_setHandleContinue(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleContinue(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mContinueCallback = fptr;
 }
 
-void midi_setHandleStop(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleStop(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mStopCallback = fptr;
 }
 
-void midi_setHandleActiveSensing(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleActiveSensing(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mActiveSensingCallback = fptr;
 }
 
-void midi_setHandleSystemReset(MidiInterface* midiHandle, void (*fptr)(midiInterface_t* midiHandle))
+void midi_setHandleSystemReset(MidiInterface* midiHandle, void (*fptr)(void* midiHandle))
 {
 	midiHandle->mSystemResetCallback = fptr;
 }
