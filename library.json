@@ -1,0 +1,15 @@
+{
+    "name": "Midi",
+    "version": "0.1.0",
+    "keywords": "midi",
+    "description": "High performance MIDI library designed for complex triggers and handling",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/samspencer5991/midi.git"
+    },
+    "frameworks": "arduino, stm32cube",
+    "platforms": "ststm32, raspberrypi",
+    "build": {
+        "libArchive": false
+    }
+}
