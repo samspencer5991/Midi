@@ -11,12 +11,8 @@
 #include <stdio.h>
 #include <math.h>
 
-#ifdef USE_MIDI_CLOCK
-#include "tim.h"
-#endif
-
 #ifdef USE_USB_MIDI
-#include "usbd_midi_cdc_if.h"
+//#include "tusb.h"
 #endif
 
 #define TRUE 	1
@@ -51,9 +47,8 @@ uint8_t midi_ringBufferEmpty(MidiRingBuf* buffer);
   * @param
   * @retval
   */
-void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
+void midi_clockInit(MidiClockTx* midiClock)
 {
-	midiClock->clockTim = htim;
 	midiClock->subDivision = MidiClock4;
 	midiClock->messageCounter = 0;
 	midiClock->tempoLed = MIDI_CLOCK_NO_ASSIGN_INDEX;
@@ -69,7 +64,7 @@ void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
 
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		midiClock->midiHandles[i] = NULL;
+		midiClock->config->midiHandles[i] = NULL;
 	}
 	midi_clockSetTempo(midiClock, DEFAULT_CLOCK_BPM*10);
 }
@@ -90,7 +85,7 @@ MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** mi
 
 	for(int i=0; i<numHandles; i++)
 	{
-		midiClock->midiHandles[i] = midiHandles[i];
+		midiClock->config->midiHandles[i] = midiHandles[i];
 	}
 	return MidiOk;
 }
@@ -122,11 +117,11 @@ void midi_clockStart(MidiClockTx* midiClock)
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Start, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 	HAL_TIM_Base_Start_IT(midiClock->clockTim);
 
@@ -138,11 +133,11 @@ void midi_clockStop(MidiClockTx* midiClock)
 	HAL_TIM_Base_Stop_IT(midiClock->clockTim);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Stop, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -151,11 +146,11 @@ void midi_clockSendStop(MidiClockTx* midiClock)
 	midiClock->state = MidiClockStopped;
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Stop, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -165,11 +160,11 @@ void midi_clockSendStart(MidiClockTx* midiClock)
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Start, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 }
 
@@ -177,9 +172,9 @@ void midi_clockSend(MidiClockTx* midiClock)
 {
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] != NULL && midiClock->midiHandles[i]->active)
+		if(midiClock->config->midiHandles[i] != NULL && midiClock->config->midiHandles[i]->active)
 		{
-			midi_send(midiClock->midiHandles[i], Clock, 0, 0, 0);
+			midi_send(midiClock->config->midiHandles[i], Clock, 0, 0, 0);
 		}
 	}
 	midiClock->messageCounter++;
@@ -421,7 +416,6 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 	// Check to see if any new complete messages have been received
 	if(midiHandle->newMessage)
 	{
-
 		while(midiHandle->newMessage)
 		{
 			uint16_t numBytes = 0;
@@ -1252,9 +1246,9 @@ MidiErrorState midi_send(	MidiInterface *midiHandle, MidiDataType type,
 #ifdef USE_USB_MIDI
 		if(midiHandle->deviceType == UsbMidi)
 		{
-			if(CDC_CheckTxReady())
+			// todo if(CDC_CheckTxReady())
 			{
-				if(USB_MIDI_Transmit_FS(midiHandle->txBuf, numDataBytes + 1) != USBD_OK)
+				//tud_midi_stream_write(0, midiHandle->txBuf, numDataBytes + 1);
 				{
 					return MidiHalError;
 				}
@@ -1328,12 +1322,9 @@ MidiErrorState midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_
 #ifdef USE_USB_MIDI
 		if(midiHandle->deviceType == UsbMidi)
 		{
-			if(CDC_CheckTxReady())
+			// todo if(CDC_CheckTxReady())
 			{
-				if(USB_MIDI_Transmit_FS(midiHandle->txBuf, 3) != USBD_OK)
-				{
-					return MidiHalError;
-				}
+				//tud_midi_stream_write(0, midiHandle->txBuf, 3);
 				return MidiOk;
 			}
 		}
@@ -1438,13 +1429,9 @@ MidiErrorState midi_sendPacket(MidiInterface* midiHandle)
 #ifdef USE_USB_MIDI
 	else if(midiHandle->deviceType == UsbMidi)
 	{
-		if(CDC_CheckTxReady())
+		// todo if(CDC_CheckTxReady())
 		{
-			usbStatus = USB_MIDI_Transmit_FS(midiHandle->txBuf, numBytes);
-			if(usbStatus == USBD_BUSY)
-			{
-				midiStatus = MidiTxBusy;
-			}
+			//tud_midi_stream_write(0, midiHandle->txBuf, numBytes);
 		}
 	}
 #endif

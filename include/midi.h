@@ -7,8 +7,17 @@
 #ifndef MIDI_H_
 #define MIDI_H_
 
-#include "usart.h"
+#if FRAMEWORK_STM32CUBE
+#if defined(STM32G4xx)
+#include "stm32g4xx_hal.h"
+#endif
+#elif FRAMEWORK_ARDUINO
+#include "Arduino.h"
+#endif
 #include "stdint.h"
+
+#define USE_USB_MIDI
+#define USE_MIDI_CLOCK
 
 #define MIDI_CHANNEL_OMNI     0
 #define MIDI_CHANNEL_OFF     	17 // and over
@@ -26,19 +35,23 @@
 #define MAX_MIDI_DELAY_MS	255
 #endif
 
-#define PITCH_BEND_UPPER_BYTE_MAX		0x7f
-#define PITCH_BEND_MAX							0x3fff
+#define PITCH_BEND_UPPER_BYTE_MAX	0x7f
+#define PITCH_BEND_MAX					0x3fff
 
-#define MIN_CLOCK_BPM								45
-#define DEFAULT_CLOCK_BPM						120
-#define MAX_CLOCK_BPM 							240
+#define MIN_CLOCK_BPM					45
+#define DEFAULT_CLOCK_BPM				120
+#define MAX_CLOCK_BPM 					240
 #define MIDI_CLOCK_TIMER_OFFSET 		1.003		// Scaling factor to account for processing delays
-#define NUM_TAP_INTERVALS						3				// Number of recorded times between tap tempo inputs
-#define LED_ACTIVE_CLOCK_MESSAGES		4
-#define MIDI_CLOCK_TAP_TIMEOUT			1500
+#define NUM_TAP_INTERVALS				3			// Number of recorded times between tap tempo inputs
+#define LED_ACTIVE_CLOCK_MESSAGES	4
+#define MIDI_CLOCK_TAP_TIMEOUT		1500
 #define MIDI_CLOCK_NO_ASSIGN_INDEX	-1
-#define MIDI_INTERFACE_INDEX_SIZE		8
+#define MIDI_INTERFACE_INDEX_SIZE	8
 #define MIDI_CLOCK_NO_SWITCH_INDEX 	-1
+
+#define MIDI_CLOCK_LED_NONE			0
+#define MIDI_CLOCK_LED_OFF				1
+#define MIDI_CLOCK_LED_ON				2
 
 #define MIDI_TYPE_A	0
 #define MIDI_TYPE_B	1
@@ -136,6 +149,10 @@ typedef enum
 	CustomDecrementExpStep,
 	CustomGoToExpStep,
 
+	// Set list mode
+	CustomToggleSetListMode,
+	CustomToggleSetListBrowser,
+
 
 	// TRS switching
 	CustomTrsSwitchOut,
@@ -147,22 +164,22 @@ typedef enum
 
 typedef enum
 {
-	CinReserved								= 0x00,
-	CinCableEvent							= 0x01,
+	CinReserved						= 0x00,
+	CinCableEvent					= 0x01,
 	CinSystemCommonTwoByte		= 0x02,
 	CinSystemCommonThreeByte	= 0x03,
-	CinSysExStartContinue			= 0x04,
-	CinSysExSingleByte				= 0x05,
-	CinSysExTwoByte						= 0x06,
-	CinSysExThreeByte					= 0x07,
-	CinNoteOff								= 0x08,
-	CinNoteOn									= 0x09,
+	CinSysExStartContinue		= 0x04,
+	CinSysExSingleByte			= 0x05,
+	CinSysExTwoByte				= 0x06,
+	CinSysExThreeByte				= 0x07,
+	CinNoteOff						= 0x08,
+	CinNoteOn						= 0x09,
 	CinAfterTouchPoly        	= 0x0A,
 	CinControlChange         	= 0x0B,
 	CinProgramChange         	= 0x0C,
 	CinAfterTouchChannel     	= 0x0D,
 	CinPitchBend             	= 0x0E,
-	CinSingleByte							= 0x0F
+	CinSingleByte					= 0x0F
 } CodeIndexNumber;
 
 /* Brief Enumeration of Control Change command numbers.
@@ -172,11 +189,11 @@ typedef enum
 typedef enum
 {
     // High resolution Continuous Controllers MSB (+32 for LSB) ----------------
-    BankSelect            				= 0,
+    BankSelect            			= 0,
     ModulationWheel             	= 1,
     BreathController            	= 2,
     // CC3 undefined
-    FootController             		= 4,
+    FootController             	= 4,
     PortamentoTime              	= 5,
     DataEntry                   	= 6,
     cCannelVolume               	= 7,
@@ -309,22 +326,23 @@ typedef struct MidiInterface
 	uint8_t thruBuffer[2];
 	/* Data Buffers */
 #ifndef USE_UART_FIFO
-	/* Because some microcontrollers may not have a FIFO buffer for the UART port (STM32F072 for example),
-	 * ring buffers can be implemented by commenting out USE_UART_FIFO at the top of this file.
-	 *
-	 * There are two buffers for each direction of the transport.
-	 * The rxRawBuf is quite small, and only stores enough bytes to receive 1 complete message.
-	 * That data is then copied into the rxBuf once a complete message has been received.
-	 *
-	 * For transmission, the txBuf is used to store all messages the application wishes to send.
-	 * These are then copied into the txPacket array buffer to be transmitted.
-	 * This mechanism allows for new messages to be queued ready for transmission without interrupting the existing transmission.
-	 *
-	 * The maximum transmission packet size is determined by TX_MAX_QUEUE.
-	 * Depending on the number of bytes to transmit, DMA (larger) or Interrupt (smaller) will be used.
-	 * Once the transmission is complete, if there are more messages in the txBuf,
-	 * these are loaded into the txPacket buffer, and then transmitted as well, ensuring a constant flow of data.
-	 */
+	/*
+	*Because some microcontrollers may not have a FIFO buffer for the UART port (STM32F072 for example),
+	* ring buffers can be implemented by commenting out USE_UART_FIFO at the top of this file.
+	*
+	* There are two buffers for each direction of the transport.
+	* The rxRawBuf is quite small, and only stores enough bytes to receive 1 complete message.
+	* That data is then copied into the rxBuf once a complete message has been received.
+	*
+	* For transmission, the txBuf is used to store all messages the application wishes to send.
+	* These are then copied into the txPacket array buffer to be transmitted.
+	* This mechanism allows for new messages to be queued ready for transmission without interrupting the existing transmission.
+	*
+	* The maximum transmission packet size is determined by TX_MAX_QUEUE.
+	* Depending on the number of bytes to transmit, DMA (larger) or Interrupt (smaller) will be used.
+	* Once the transmission is complete, if there are more messages in the txBuf,
+	* these are loaded into the txPacket buffer, and then transmitted as well, ensuring a constant flow of data.
+	*/
 	uint8_t rxRawBuf[2];						// Buffer to hold raw data from the UART port
 	MidiRingBuf rxBuf;						// Incoming data buffer
 	uint8_t txQueue[MIDI_TX_QUEUE_SIZE];	// Array buffer for midi data waiting to be transfered
@@ -358,10 +376,16 @@ typedef struct MidiInterface
 	void (*mSystemResetCallback)(void* midiHandle);
 } MidiInterface;
 
+// Non-volatile data for MIDI clock configuration
+typedef struct
+{
+	MidiInterface** midiHandles;
+} MidiClockConfig;
+
 typedef struct
 {
 	MidiClockState state;
-	MidiInterface** midiHandles;
+	MidiClockConfig* config;	// Pointer to clock config
 	MidiClockSubDivision subDivision;
 	uint16_t bpm;
 #ifdef FRAMEWORK_STM32CUBE
@@ -375,7 +399,10 @@ typedef struct
 	int statusLed;
 	int switchIndex;
 	uint8_t useLed;
+	volatile uint8_t ledIndicatorState;
 } MidiClockTx;
+
+
 
 extern uint8_t midiInChannel;	// MIDI in channel is set to omni by default
 extern uint32_t sysExId;
@@ -438,7 +465,7 @@ void midi_convertNoteNumberToText(uint8_t number, char* str);
 #ifdef USE_MIDI_CLOCK
 MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** midiHandles, uint8_t numHandles);
 MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo);
-void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim);
+void midi_clockInit(MidiClockTx* midiClock);
 void midi_clockStart(MidiClockTx* midiClock);
 void midi_clockStop(MidiClockTx* midiClock);
 void midi_clockSend(MidiClockTx* midiClock);
