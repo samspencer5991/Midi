@@ -12,7 +12,7 @@
 #include <math.h>
 
 #ifdef USE_USB_MIDI
-//#include "tusb.h"
+#include "tusb.h"
 #endif
 
 #define TRUE 	1
@@ -1248,7 +1248,7 @@ MidiErrorState midi_send(	MidiInterface *midiHandle, MidiDataType type,
 		{
 			// todo if(CDC_CheckTxReady())
 			{
-				//tud_midi_stream_write(0, midiHandle->txBuf, numDataBytes + 1);
+				tud_midi_stream_write(0, midiHandle->txBuf, numDataBytes + 1);
 				{
 					return MidiHalError;
 				}
@@ -1324,7 +1324,7 @@ MidiErrorState midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_
 		{
 			// todo if(CDC_CheckTxReady())
 			{
-				//tud_midi_stream_write(0, midiHandle->txBuf, 3);
+				tud_midi_stream_write(0, midiHandle->txBuf, 3);
 				return MidiOk;
 			}
 		}
@@ -1431,7 +1431,7 @@ MidiErrorState midi_sendPacket(MidiInterface* midiHandle)
 	{
 		// todo if(CDC_CheckTxReady())
 		{
-			//tud_midi_stream_write(0, midiHandle->txBuf, numBytes);
+			tud_midi_stream_write(0, midiHandle->txBuf, numBytes);
 		}
 	}
 #endif
