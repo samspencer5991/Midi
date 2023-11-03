@@ -111,7 +111,7 @@ void midi_clockStart(MidiClockTx* midiClock)
 		{
 			break;
 		}
-		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
+		midi_Send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 	HAL_TIM_Base_Start_IT(midiClock->clockTim);
 
@@ -127,7 +127,7 @@ void midi_clockStop(MidiClockTx* midiClock)
 		{
 			break;
 		}
-		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
+		midi_Send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -724,14 +724,12 @@ MidiErrorState midi_readCustom(MidiInterface *midiHandle, uint8_t* buf, uint16_t
   */
 void midi_txUartHandler(MidiInterface* midiHandle)
 {
-	MidiErrorState state;
-
 	// When a transfer has completed, check if more data is available to transfer, if so, transfer it.
 
 	if(midiHandle->txQueueIndex == 0)
 	{
 		midiHandle->txState = MidiReady;
-		return MidiOk;
+		return;
 	}
 	// If not, then set the state flag to ready to indicate that a new packet transfer may commence
 	midiHandle->txState = MidiReady;
@@ -765,13 +763,13 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 
 			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 			{
-				return MidiHalError;
+				return;
 			}
 		}
 		// Copy the received byte into the rxBuffer
 		if(midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]) != MidiOk)
 		{
-			return MidiBufferFull;
+			return;
 		}
 
 		// Channel Voice messages
@@ -783,7 +781,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 			{
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 2) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 				midiHandle->pendingNumData = 2;
 			}
@@ -791,7 +789,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 			{
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 				midiHandle->pendingNumData = 1;
 			}
@@ -813,7 +811,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 				// Once data has been received, begin listening for a new status message
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 			}
 			// Time code quarter frame and song select messages only require 1 data byte
@@ -821,7 +819,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 			{
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 				midiHandle->pendingNumData = 1;
 				midiHandle->pendingRxType = MidiData;
@@ -831,7 +829,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 			{
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 2) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 				midiHandle->pendingNumData = 2;
 				midiHandle->pendingRxType = MidiData;
@@ -845,7 +843,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
  				midiHandle->pendingNumData = 1;
 				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 				{
-					return MidiHalError;
+					return;
 				}
 			}
 		}
@@ -859,7 +857,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 		{
 			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 			{
-				return MidiHalError;
+				return;
 			}
 			midiHandle->pendingRxType = MidiStatus;
 		}
@@ -873,7 +871,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 				{
 					if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 					{
-						return MidiHalError;
+						return;
 					}
 					midiHandle->pendingRxType = MidiStatus;
 				}
@@ -889,7 +887,7 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 			// Once data has been received, begin listening for a new status message
 			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 			{
-				return MidiHalError;
+				return;
 			}
 		}
 	}
@@ -1046,7 +1044,7 @@ void midi_Send(	MidiInterface *midiHandle, MidiDataType type,
 	{
 		if(midiHandle->txQueueIndex == MIDI_TX_QUEUE_SIZE - 1)
 		{
-			return MidiBufferFull;
+			return;
 		}
 		// The status byte is always required for every message
 		midiHandle->txQueue[midiHandle->txQueueIndex] = status;
@@ -1107,7 +1105,7 @@ void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 	{
 		if((MIDI_TX_QUEUE_SIZE - 1) - midiHandle->txQueueIndex > len)
 		{
-			return MidiBufferFull;
+			return;
 		}
 		// Populate the SysEx structure for the message
 		midiHandle->txQueue[midiHandle->txQueueIndex] = SystemExclusive;
@@ -1152,9 +1150,9 @@ void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 			midiHandle->txState = MidiBusy;
 			if(HAL_UART_Transmit_IT(midiHandle->uartHandle, midiHandle->txBuf, len+5) != HAL_OK)
 			{
-				return MidiHalError;
+				return;
 			}
-			return MidiOk;
+			return;
 		}
 #ifdef USE_USB_MIDI
 		if(midiHandle->deviceType == UsbMidi)
@@ -1162,7 +1160,7 @@ void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 			// todo if(CDC_CheckTxReady())
 			{
 				//tud_midi_stream_write(0, midiHandle->txBuf, 3);
-				return MidiOk;
+				return;
 			}
 		}
 #endif
@@ -1170,7 +1168,7 @@ void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 
 	//TODO: check handling for sysex
 	// other messages
-	return MidiParamError;
+	return;
 }
 
 /**
@@ -1220,10 +1218,6 @@ int midi_numDataBytesForMessage(MidiStatusByte status)
 
 void midi_sendPacket(MidiInterface* midiHandle)
 {
-#ifdef USE_USB
-	uint8_t usbStatus;
-#endif
-	MidiErrorState midiStatus = MidiOk;
 	// Because this may be called even though there is no new queued data, check if new data is available
 	if(midiHandle->txQueueIndex == 0 || midiHandle == NULL)
 	{

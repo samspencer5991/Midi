@@ -155,18 +155,15 @@ typedef enum
     PolyModeOn                  = 127
 } MidiControlChangeNumber;
 
-typedef struct 
+typedef enum 
 {
-	typedef enum 
-	{
-		PitchBendSensitivity    = 0x0000,
-		ChannelFineTuning       = 0x0001,
-		ChannelCoarseTuning     = 0x0002,
-		SelectTuningProgram     = 0x0003,
-		SelectTuningBank        = 0x0004,
-		ModulationDepthRange    = 0x0005,
-		NullFunction            = (0x7f << 7) + 0x7f,
-	} RegisteredParameterNumbers;
-} RPN;
+	PitchBendSensitivity    = 0x0000,
+	ChannelFineTuning       = 0x0001,
+	ChannelCoarseTuning     = 0x0002,
+	SelectTuningProgram     = 0x0003,
+	SelectTuningBank        = 0x0004,
+	ModulationDepthRange    = 0x0005,
+	NullFunction            = (0x7f << 7) + 0x7f
+} RegisteredParameterNumbers;
 
 #endif // MIDI_DEFS_H
