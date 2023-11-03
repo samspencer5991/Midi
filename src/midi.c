@@ -11,12 +11,8 @@
 #include <stdio.h>
 #include <math.h>
 
-#ifdef USE_MIDI_CLOCK
-#include "tim.h"
-#endif
-
 #ifdef USE_USB_MIDI
-#include "usbd_midi_cdc_if.h"
+#include "tusb.h"
 #endif
 
 #define TRUE 	1
@@ -34,16 +30,6 @@ uint8_t numMidiInterfaces = 0;
 /* MIDI DATA PFP*/
 MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel);
 
-/* RING BUFFER PFP*/
-void midi_initRingBuffer(MidiRingBuf* buffer, uint16_t size);
-void midi_resetRingBuffer(MidiRingBuf* buffer);
-uint16_t midi_numDataRingBuffer(MidiRingBuf* buffer);
-void midi_advanceRingBufferPointer(MidiRingBuf* buffer);
-void midi_retreatRingBufferPointer(MidiRingBuf* buffer);
-
-MidiErrorState midi_ringBufferXfer(MidiRingBuf* bufferSource, MidiRingBuf* bufferDest);
-uint8_t midi_ringBufferEmpty(MidiRingBuf* buffer);
-
 // -------------------- Clock -------------------- //
 #ifdef USE_MIDI_CLOCK
 /**
@@ -51,9 +37,8 @@ uint8_t midi_ringBufferEmpty(MidiRingBuf* buffer);
   * @param
   * @retval
   */
-void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
+void midi_clockInit(MidiClockTx* midiClock)
 {
-	midiClock->clockTim = htim;
 	midiClock->subDivision = MidiClock4;
 	midiClock->messageCounter = 0;
 	midiClock->tempoLed = MIDI_CLOCK_NO_ASSIGN_INDEX;
@@ -69,7 +54,7 @@ void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim)
 
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		midiClock->midiHandles[i] = NULL;
+		midiClock->config->midiHandles[i] = NULL;
 	}
 	midi_clockSetTempo(midiClock, DEFAULT_CLOCK_BPM*10);
 }
@@ -90,7 +75,7 @@ MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** mi
 
 	for(int i=0; i<numHandles; i++)
 	{
-		midiClock->midiHandles[i] = midiHandles[i];
+		midiClock->config->midiHandles[i] = midiHandles[i];
 	}
 	return MidiOk;
 }
@@ -122,11 +107,11 @@ void midi_clockStart(MidiClockTx* midiClock)
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Start, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 	HAL_TIM_Base_Start_IT(midiClock->clockTim);
 
@@ -138,11 +123,11 @@ void midi_clockStop(MidiClockTx* midiClock)
 	HAL_TIM_Base_Stop_IT(midiClock->clockTim);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Stop, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -151,11 +136,11 @@ void midi_clockSendStop(MidiClockTx* midiClock)
 	midiClock->state = MidiClockStopped;
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Stop, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -165,11 +150,11 @@ void midi_clockSendStart(MidiClockTx* midiClock)
 	__HAL_TIM_SET_COUNTER(midiClock->clockTim, 0);
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] == NULL)
+		if(midiClock->config->midiHandles[i] == NULL)
 		{
 			break;
 		}
-		midi_send(midiClock->midiHandles[i], Start, 0, 0, 0);
+		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 }
 
@@ -177,9 +162,9 @@ void midi_clockSend(MidiClockTx* midiClock)
 {
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		if(midiClock->midiHandles[i] != NULL && midiClock->midiHandles[i]->active)
+		if(midiClock->config->midiHandles[i] != NULL && midiClock->config->midiHandles[i]->active)
 		{
-			midi_send(midiClock->midiHandles[i], Clock, 0, 0, 0);
+			midi_send(midiClock->config->midiHandles[i], Clock, 0, 0, 0);
 		}
 	}
 	midiClock->messageCounter++;
@@ -414,14 +399,13 @@ MidiErrorState midi_sendControlChange( MidiInterface *midiHandle, MidiDataByte  
 }
 
 
-// ------------------ Events ----------------- //
 
+// ------------------ Input ----------------- //
 MidiErrorState midi_read(MidiInterface *midiHandle)
 {
 	// Check to see if any new complete messages have been received
 	if(midiHandle->newMessage)
 	{
-
 		while(midiHandle->newMessage)
 		{
 			uint16_t numBytes = 0;
@@ -675,7 +659,6 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 	return MidiNoData;
 }
 
-
 /*
  * Special use case of the MIDI library. This read copies all received valid MIDI data to the provided buffer.
  * This is useful for chips that are acting as a MIDI bridge/expander, and don't require callbacks.
@@ -732,12 +715,14 @@ MidiErrorState midi_readCustom(MidiInterface *midiHandle, uint8_t* buf, uint16_t
 	return MidiNoData;
 }
 
+
+// ------------------ Events ----------------- //
 /**
   * @brief
   * @param
   * @retval
   */
-MidiErrorState midi_txUartHandler(MidiInterface* midiHandle)
+void midi_txUartHandler(MidiInterface* midiHandle)
 {
 	MidiErrorState state;
 
@@ -751,8 +736,8 @@ MidiErrorState midi_txUartHandler(MidiInterface* midiHandle)
 	// If not, then set the state flag to ready to indicate that a new packet transfer may commence
 	midiHandle->txState = MidiReady;
 	// If there is still more data to transfer, begin a new transfer
-	state = midi_sendPacket(midiHandle);
-	return state;
+	midi_sendPacket(midiHandle);
+	return;
 }
 
 /**
@@ -765,7 +750,7 @@ MidiErrorState midi_txUartHandler(MidiInterface* midiHandle)
   * @param none
   * @retval None
   */
-MidiErrorState midi_rxUartHandler(MidiInterface* midiHandle)
+void midi_rxUartHandler(MidiInterface* midiHandle)
 {
 	// If the handle is waiting for a status byte
 	if(midiHandle->pendingRxType == MidiStatus)
@@ -923,17 +908,17 @@ MidiErrorState midi_rxUartHandler(MidiInterface* midiHandle)
 		// Once data has been received, begin listening for a new status message
 		if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
 		{
-			return MidiHalError;
+			return;
 		}
 	}
-	return MidiOk;
+	return ;
 }
 
-MidiErrorState midi_errorUartHandler(MidiInterface* midiHandle)
+void midi_errorUartHandler(MidiInterface* midiHandle)
 {
 	// Once the error has been handled, restart the MIDI interface
 	midi_begin(midiHandle);
-	return MidiOk;
+	return;
 }
 
 
@@ -1030,156 +1015,13 @@ void midi_setHandleSystemReset(MidiInterface* midiHandle, void (*fptr)(void* mid
 
 
 // ------------ Private Functions ------------ //
-/* Ring Buffer */
-void midi_initRingBuffer(MidiRingBuf* buffer, uint16_t size)
-{
-	// Assign the buffer capacity and init values
-	buffer->size = size;
-	buffer->head = 0;
-	buffer->tail = 0;
-	buffer->full = FALSE;
-
-	for(int i=0; i<size; i++)
-	{
-		buffer->buffer[i] = 255;
-	}
-}
-
-/**
-  * @brief Resets the buffer
-  * @param *buffer pointer to the buffer
-  * @retval None
-  */
-void midi_resetRingBuffer(MidiRingBuf* buf)
-{
-	buf->head = 0;
-	buf->tail = 0;
-	buf->full = FALSE;
-}
-
-/**
-  * @brief Returns the number of elements in the buffer
-  * @param *buffer pointer to the buffer
-  * @retval Number of elements
-  */
-uint16_t midi_numDataRingBuffer(MidiRingBuf* buffer)
-{
-	uint16_t size = buffer->size;
-	if(!buffer->full)
-	{
-		if(buffer->head >= buffer->tail)
-		{
-			size = buffer->head - buffer->tail;
-		}
-		else
-		{
-			size = buffer->size + buffer->head - buffer->tail;
-		}
-	}
-	return size;
-}
-
-/**
-  * @brief Advances the buffer pointers (head and tail)
-  * @param *buffer pointer to the buffer
-  * @retval None
-  */
-void midi_advanceRingBufferPointer(MidiRingBuf* buffer)
-{
-	if(buffer->full)
-	{
-		buffer->tail = (buffer->tail + 1) % buffer->size;
-	}
-
-	buffer->head = (buffer->head + 1) % buffer->size;
-	buffer->full = (buffer->head == buffer->tail);
-}
-
-/**
-  * @brief Retreats the buffer pointers (head and tail)
-  * @param *buffer pointer to the buffer
-  * @retval None
-  */
-void midi_retreatRingBufferPointer(MidiRingBuf* buffer)
-{
-	buffer->full = FALSE;
-	buffer->tail = (buffer->tail + 1) % buffer->size;
-}
-
-/**
-  * @brief	Puts a byte of data in the buffer and returns an error if buffer is full
-  * @param	*buffer pointer to the buffer
-  * 			data the data to be copied into the buffer
-  * @retval	Errorstate
-  */
-MidiErrorState midi_ringBufferPut(MidiRingBuf* buffer, uint8_t data)
-{
-
-	if(!buffer->full)
-	{
-		buffer->buffer[buffer->head] = data;
-		midi_advanceRingBufferPointer(buffer);
-		return MidiOk;
-	}
-	return MidiBufferFull;
-}
-
-/**
-  * @brief	Gets a byte of data from the buffer and returns an error if buffer is empty
-  * @param	*buffer pointer to the buffer
-  * 			data pointer to store the data
-  * @retval	Errorstate
-  */
-MidiErrorState midi_ringBufferGet(MidiRingBuf* buffer, uint8_t* data)
-{
-	if(!midi_ringBufferEmpty(buffer))
-	{
-		*data = buffer->buffer[buffer->tail];
-		midi_retreatRingBufferPointer(buffer);
-		return MidiOk;
-	}
-	return MidiBufferEmpty;
-}
-
-/**
-  * @brief	Transfers a byte of data from the buffer to another. Returns error on empty or full states
-  * @param	bufferSource pointer to the source buffer
-  * 			bufferDest pointer to the destination buffer
-  * @retval	Errorstate
-  */
-MidiErrorState midi_ringBufferXfer(MidiRingBuf* bufferSource, MidiRingBuf* bufferDest)
-{
-	if(midi_ringBufferEmpty(bufferSource))
-	{
-		return MidiBufferEmpty;
-	}
-	if(bufferDest->full)
-	{
-		return MidiBufferFull;
-	}
-	bufferDest->buffer[bufferDest->head] = bufferSource->buffer[bufferSource->tail];
-	midi_retreatRingBufferPointer(bufferSource);
-	midi_advanceRingBufferPointer(bufferDest);
-	return MidiOk;
-}
-
-uint8_t midi_ringBufferEmpty(MidiRingBuf* buffer)
-{
-	return (!buffer->full && (buffer->head == buffer->tail));
-}
-
-/**
-  * @brief System Clock Configuration
-  * @param none
-  * @retval Errorstate
-  */
-MidiErrorState midi_send(	MidiInterface *midiHandle, MidiDataType type,
-							MidiDataByte data1, MidiDataByte data2, MidiChannel channel)
+void midi_Send(	MidiInterface *midiHandle, MidiDataType type,
+									MidiDataByte data1, MidiDataByte data2, MidiChannel channel)
 {
 	// Check for valid channel and data type
 	if (channel >= MIDI_CHANNEL_OFF  || type < 0x80)
 	{
-		return MidiParamError;
+		return;
 	}
 
 	// Protection: remove MSBs on data
@@ -1223,7 +1065,6 @@ MidiErrorState midi_send(	MidiInterface *midiHandle, MidiDataType type,
 		midiHandle->txDataPending = TRUE;
 	}
 
-
 	// If no transmissions are currently taking place, load the data directly into the transmit buffer
 	else
 	{
@@ -1243,33 +1084,23 @@ MidiErrorState midi_send(	MidiInterface *midiHandle, MidiDataType type,
 		{
 			// Lock the buffer transfer state
 			midiHandle->txState = MidiBusy;
-			if(HAL_UART_Transmit_IT(midiHandle->uartHandle, midiHandle->txBuf, numDataBytes + 1) != HAL_OK)
-			{
-				return MidiHalError;
-			}
-			return MidiOk;
+			HAL_UART_Transmit_IT(midiHandle->uartHandle, midiHandle->txBuf, numDataBytes + 1);
+
 		}
 #ifdef USE_USB_MIDI
-		if(midiHandle->deviceType == UsbMidi)
+		else if(midiHandle->deviceType == UsbMidi)
 		{
-			if(CDC_CheckTxReady())
-			{
-				if(USB_MIDI_Transmit_FS(midiHandle->txBuf, numDataBytes + 1) != USBD_OK)
-				{
-					return MidiHalError;
-				}
-				return MidiOk;
-			}
+				tud_midi_stream_write(0, midiHandle->txBuf, numDataBytes + 1);
 		}
 #endif
 	}
 
 	//TODO: check handling for sysex
 	// other messages
-	return MidiParamError;
+	return;
 }
 
-MidiErrorState midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId)
+void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId)
 {
 	// If a transmission is already in process, queue the data up in the txBuf
 	if(midiHandle->txState == MidiBusy)
@@ -1328,12 +1159,9 @@ MidiErrorState midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_
 #ifdef USE_USB_MIDI
 		if(midiHandle->deviceType == UsbMidi)
 		{
-			if(CDC_CheckTxReady())
+			// todo if(CDC_CheckTxReady())
 			{
-				if(USB_MIDI_Transmit_FS(midiHandle->txBuf, 3) != USBD_OK)
-				{
-					return MidiHalError;
-				}
+				//tud_midi_stream_write(0, midiHandle->txBuf, 3);
 				return MidiOk;
 			}
 		}
@@ -1390,36 +1218,27 @@ int midi_numDataBytesForMessage(MidiStatusByte status)
 	}
 }
 
-/**
-  * @brief
-  * @param
-  * @retval
-  */
-MidiErrorState midi_sendPacket(MidiInterface* midiHandle)
+void midi_sendPacket(MidiInterface* midiHandle)
 {
 #ifdef USE_USB
 	uint8_t usbStatus;
 #endif
 	MidiErrorState midiStatus = MidiOk;
 	// Because this may be called even though there is no new queued data, check if new data is available
-	if(midiHandle->txQueueIndex == 0)
+	if(midiHandle->txQueueIndex == 0 || midiHandle == NULL)
 	{
-		return MidiBufferEmpty;
-	}
-	if(midiHandle == NULL)
-	{
-		return MidiParamError;
+		return;
 	}
 
 	// Check if a transmission is already in progress.
 	// If it is, no action needs to be taken as the tx complete call back will start another transfer.
 	if(midiHandle->txState == MidiBusy)
 	{
-		return MidiTxBusy;
+		return;
 	}
 
 	// Set the state to busy to avoid interrupts
-	midiHandle->txState = MidiTxInProgress;
+	midiHandle->txState = MidiBusy;
 	// Find out how many bytes exist in the txBuf
 	uint8_t numBytes = midiHandle->txQueueIndex;
 	// If no transfer is taking place, copy a packet into the txPacketBuf, and begin the transfer
@@ -1432,19 +1251,14 @@ MidiErrorState midi_sendPacket(MidiInterface* midiHandle)
 	{
 		if(HAL_UART_Transmit_IT(midiHandle->uartHandle, midiHandle->txBuf, numBytes) != HAL_OK)
 		{
-			return MidiHalError;
+			return;
 		}
 	}
 #ifdef USE_USB_MIDI
 	else if(midiHandle->deviceType == UsbMidi)
 	{
-		if(CDC_CheckTxReady())
 		{
-			usbStatus = USB_MIDI_Transmit_FS(midiHandle->txBuf, numBytes);
-			if(usbStatus == USBD_BUSY)
-			{
-				midiStatus = MidiTxBusy;
-			}
+			tud_midi_stream_write(0, midiHandle->txBuf, numBytes);
 		}
 	}
 #endif
@@ -1452,7 +1266,7 @@ MidiErrorState midi_sendPacket(MidiInterface* midiHandle)
 	// Reset the buffer index to indicate that they are empty
 	midiHandle->txQueueIndex = 0;
 	midiHandle->txBufIndex = 0;
-	return midiStatus;
+	return;
 }
 
 MidiDataType midi_getStatusType(uint8_t status)
@@ -1468,54 +1282,6 @@ MidiDataType midi_getStatusType(uint8_t status)
 	}
 }
 
-// 9 char buffer required
-void midi_convertNoteNumberToText(uint8_t number, char* str)
-{
-	// First get the octave number (uses C3 = 60 convention)
-	int octave = (number/12) - 2;
-	// Then get the note name (C, D, E, etc...)
-	uint8_t noteDegree = number % 12;
-	switch(noteDegree)
-	{
-	case 0:
-		sprintf(str,"C%d",octave);
-		break;
-	case 1:
-		sprintf(str,"C#/Db%d",octave);
-		break;
-	case 2:
-		sprintf(str,"D%d",octave);
-		break;
-	case 3:
-		sprintf(str,"D#/Eb%d",octave);
-		break;
-	case 4:
-		sprintf(str,"E%d",octave);
-		break;
-	case 5:
-		sprintf(str,"F%d",octave);
-		break;
-	case 6:
-		sprintf(str,"F#/Gb%d",octave);
-		break;
-	case 7:
-		sprintf(str,"G%d",octave);
-		break;
-	case 8:
-		sprintf(str,"G#/Ab%d",octave);
-		break;
-	case 9:
-		sprintf(str,"A%d",octave);
-		break;
-	case 10:
-		sprintf(str,"A#/Bb%d",octave);
-		break;
-	case 11:
-		sprintf(str,"B%d",octave);
-		break;
-	}
-}
-
 /**
   * @brief System Clock Configuration
   * @param none
@@ -1524,4 +1290,81 @@ void midi_convertNoteNumberToText(uint8_t number, char* str)
 MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel)
 {
 	return (uint8_t)inType | ((inChannel) & 0x0f);
+}
+
+/*! \brief Encode System Exclusive messages.
+ SysEx messages are encoded to guarantee transmission of data bytes higher than
+ 127 without breaking the MIDI protocol. Use this static method to convert the
+ data you want to send.
+ \param inData The data to encode.
+ \param outSysEx The output buffer where to store the encoded message.
+ \param inLength The length of the input buffer.
+ \param inFlipHeaderBits True for Korg and other who store MSB in reverse order
+ \return The length of the encoded output buffer.
+ @see decodeSysEx
+ Code inspired from Ruin & Wesen's SysEx encoder/decoder - http://ruinwesen.com
+ */
+unsigned encodeSysEx(const uint8_t* inData, uint8_t* outSysEx,
+                     unsigned inLength, uint8_t inFlipHeaderBits)
+{
+	unsigned outLength  = 0;     // Num bytes in output array.
+	uint8_t count          = 0;     // Num 7bytes in a block.
+	outSysEx[0]         = 0;
+
+	for (unsigned i = 0; i < inLength; ++i)
+	{
+		const uint8_t data = inData[i];
+		const uint8_t msb  = data >> 7;
+		const uint8_t body = data & 0x7f;
+
+		outSysEx[0] |= (msb << (inFlipHeaderBits ? count : (6 - count)));
+		outSysEx[1 + count] = body;
+
+		if (count++ == 6)
+		{
+			outSysEx   += 8;
+			outLength  += 8;
+			outSysEx[0] = 0;
+			count       = 0;
+		}
+	}
+	return outLength + count + (count != 0 ? 1 : 0);
+}
+
+/*! \brief Decode System Exclusive messages.
+ SysEx messages are encoded to guarantee transmission of data bytes higher than
+ 127 without breaking the MIDI protocol. Use this static method to reassemble
+ your received message.
+ \param inSysEx The SysEx data received from MIDI in.
+ \param outData The output buffer where to store the decrypted message.
+ \param inLength The length of the input buffer.
+ \param inFlipHeaderBits True for Korg and other who store MSB in reverse order
+ \return The length of the output buffer.
+ @see encodeSysEx @see getSysExArrayLength
+ Code inspired from Ruin & Wesen's SysEx encoder/decoder - http://ruinwesen.com
+ */
+unsigned decodeSysEx(const uint8_t* inSysEx, uint8_t* outData,
+                     unsigned inLength, uint8_t inFlipHeaderBits)
+{
+	unsigned count  = 0;
+	uint8_t msbStorage = 0;
+	uint8_t byteIndex  = 0;
+
+	for (unsigned i = 0; i < inLength; ++i)
+	{
+		if ((i % 8) == 0)
+		{
+			msbStorage = inSysEx[i];
+			byteIndex  = 6;
+		}
+		else
+		{
+			const uint8_t body     = inSysEx[i];
+			const uint8_t shift    = inFlipHeaderBits ? 6 - byteIndex : byteIndex;
+			const uint8_t msb      = byte(((msbStorage >> shift) & 1) << 7);
+			byteIndex--;
+			outData[count++] = msb | body;
+		}
+	}
+	return count;
 }
