@@ -7,8 +7,17 @@
 #ifndef MIDI_H_
 #define MIDI_H_
 
-#include "usart.h"
+#if FRAMEWORK_STM32CUBE
+#if defined(STM32G4xx)
+#include "stm32g4xx_hal.h"
+#endif
+#endif
 #include "stdint.h"
+#include "midi_buffer.h"
+#include "midi_defs.h"
+
+#define USE_USB_MIDI
+#define USE_MIDI_CLOCK
 
 #define MIDI_CHANNEL_OMNI     0
 #define MIDI_CHANNEL_OFF     	17 // and over
@@ -26,19 +35,23 @@
 #define MAX_MIDI_DELAY_MS	255
 #endif
 
-#define PITCH_BEND_UPPER_BYTE_MAX		0x7f
-#define PITCH_BEND_MAX							0x3fff
+#define PITCH_BEND_UPPER_BYTE_MAX	0x7f
+#define PITCH_BEND_MAX					0x3fff
 
-#define MIN_CLOCK_BPM								45
-#define DEFAULT_CLOCK_BPM						120
-#define MAX_CLOCK_BPM 							240
+#define MIN_CLOCK_BPM					45
+#define DEFAULT_CLOCK_BPM				120
+#define MAX_CLOCK_BPM 					240
 #define MIDI_CLOCK_TIMER_OFFSET 		1.003		// Scaling factor to account for processing delays
-#define NUM_TAP_INTERVALS						3				// Number of recorded times between tap tempo inputs
-#define LED_ACTIVE_CLOCK_MESSAGES		4
-#define MIDI_CLOCK_TAP_TIMEOUT			1500
+#define NUM_TAP_INTERVALS				3			// Number of recorded times between tap tempo inputs
+#define LED_ACTIVE_CLOCK_MESSAGES	4
+#define MIDI_CLOCK_TAP_TIMEOUT		1500
 #define MIDI_CLOCK_NO_ASSIGN_INDEX	-1
-#define MIDI_INTERFACE_INDEX_SIZE		8
+#define MIDI_INTERFACE_INDEX_SIZE	8
 #define MIDI_CLOCK_NO_SWITCH_INDEX 	-1
+
+#define MIDI_CLOCK_LED_NONE			0
+#define MIDI_CLOCK_LED_OFF				1
+#define MIDI_CLOCK_LED_ON				2
 
 #define MIDI_TYPE_A	0
 #define MIDI_TYPE_B	1
@@ -73,37 +86,6 @@ typedef enum
 	UartMidi
 } MidiDeviceType;
 
-// MIDI data types
-typedef enum
-{
-	InvalidType   					= 0x00,	// For notifying errors
-
-	// Custom
-	MidiCustomMessage				= 0x70,	// Generic custom message
-	// Standard MIDI
-	NoteOff               	= 0x80, // Note Off
-	NoteOn                	= 0x90, // Note On
-	AfterTouchPoly        	= 0xA0, // Polyphonic AfterTouch
-	ControlChange         	= 0xB0, // Control Change
-	ProgramChange         	= 0xC0, // Program Change
-	AfterTouchChannel     	= 0xD0, // channel (monophonic) AfterTouch
-	PitchBend             	= 0xE0, // Pitch Bend
-	SystemExclusive       	= 0xF0, // System Exclusive
-	TimeCodeQuarterFrame  	= 0xF1, // System Common - MIDI Time Code Quarter Frame
-	SongPosition          	= 0xF2, // System Common - Song Position Pointer
-	SongSelect            	= 0xF3, // System Common - Song Select
-	Reserved1								= 0xF4,	// Undefined (reserved)
-	Reserved2								= 0xF5,	// Undefined (reserved)
-	TuneRequest           	= 0xF6, // System Common - Tune Request
-	SystemExclusiveEnd			= 0xF7,	// System Exclusive terminating byte
-	Clock                 	= 0xF8, // System Real Time - Timing Clock
-	Start                 	= 0xFA, // System Real Time - Start
-	Continue              	= 0xFB, // System Real Time - Continue
-	Stop                  	= 0xFC, // System Real Time - Stop
-	Undefined								= 0xFD,	// Undefined (reserved)
-	ActiveSensing         	= 0xFE, // System Real Time - Active Sensing
-	SystemReset           	= 0xFF // System Real Time - System Reset
-} MidiDataType;
 
 typedef enum
 {
@@ -136,6 +118,10 @@ typedef enum
 	CustomDecrementExpStep,
 	CustomGoToExpStep,
 
+	// Set list mode
+	CustomToggleSetListMode,
+	CustomToggleSetListBrowser,
+
 
 	// TRS switching
 	CustomTrsSwitchOut,
@@ -147,22 +133,22 @@ typedef enum
 
 typedef enum
 {
-	CinReserved								= 0x00,
-	CinCableEvent							= 0x01,
+	CinReserved						= 0x00,
+	CinCableEvent					= 0x01,
 	CinSystemCommonTwoByte		= 0x02,
 	CinSystemCommonThreeByte	= 0x03,
-	CinSysExStartContinue			= 0x04,
-	CinSysExSingleByte				= 0x05,
-	CinSysExTwoByte						= 0x06,
-	CinSysExThreeByte					= 0x07,
-	CinNoteOff								= 0x08,
-	CinNoteOn									= 0x09,
+	CinSysExStartContinue		= 0x04,
+	CinSysExSingleByte			= 0x05,
+	CinSysExTwoByte				= 0x06,
+	CinSysExThreeByte				= 0x07,
+	CinNoteOff						= 0x08,
+	CinNoteOn						= 0x09,
 	CinAfterTouchPoly        	= 0x0A,
 	CinControlChange         	= 0x0B,
 	CinProgramChange         	= 0x0C,
 	CinAfterTouchChannel     	= 0x0D,
 	CinPitchBend             	= 0x0E,
-	CinSingleByte							= 0x0F
+	CinSingleByte					= 0x0F
 } CodeIndexNumber;
 
 /* Brief Enumeration of Control Change command numbers.
@@ -172,11 +158,11 @@ typedef enum
 typedef enum
 {
     // High resolution Continuous Controllers MSB (+32 for LSB) ----------------
-    BankSelect            				= 0,
+    BankSelect            			= 0,
     ModulationWheel             	= 1,
     BreathController            	= 2,
     // CC3 undefined
-    FootController             		= 4,
+    FootController             	= 4,
     PortamentoTime              	= 5,
     DataEntry                   	= 6,
     cCannelVolume               	= 7,
@@ -255,18 +241,6 @@ typedef enum
 	MidiClock16Dot	= 9
 } MidiClockSubDivision;
 
-/* Ring Buffer */
-#ifndef USE_UART_FIFO
-typedef struct
-{
-	uint8_t *buffer;	// Ring buffer for TX uart data
-	uint16_t head;		// Index for data head position
-	uint16_t tail;		// Index for data tail position
-	uint8_t full;		// Flag for whether buffer is full
-	uint16_t size;		// Capacity of the buffer in bytes
-} MidiRingBuf;
-#endif
-
 // Simple type for tracking the state of a direction of the midi transport
 typedef enum
 {
@@ -308,23 +282,7 @@ typedef struct MidiInterface
 	uint8_t numThruHandles;
 	uint8_t thruBuffer[2];
 	/* Data Buffers */
-#ifndef USE_UART_FIFO
-	/* Because some microcontrollers may not have a FIFO buffer for the UART port (STM32F072 for example),
-	 * ring buffers can be implemented by commenting out USE_UART_FIFO at the top of this file.
-	 *
-	 * There are two buffers for each direction of the transport.
-	 * The rxRawBuf is quite small, and only stores enough bytes to receive 1 complete message.
-	 * That data is then copied into the rxBuf once a complete message has been received.
-	 *
-	 * For transmission, the txBuf is used to store all messages the application wishes to send.
-	 * These are then copied into the txPacket array buffer to be transmitted.
-	 * This mechanism allows for new messages to be queued ready for transmission without interrupting the existing transmission.
-	 *
-	 * The maximum transmission packet size is determined by TX_MAX_QUEUE.
-	 * Depending on the number of bytes to transmit, DMA (larger) or Interrupt (smaller) will be used.
-	 * Once the transmission is complete, if there are more messages in the txBuf,
-	 * these are loaded into the txPacket buffer, and then transmitted as well, ensuring a constant flow of data.
-	 */
+
 	uint8_t rxRawBuf[2];						// Buffer to hold raw data from the UART port
 	MidiRingBuf rxBuf;						// Incoming data buffer
 	uint8_t txQueue[MIDI_TX_QUEUE_SIZE];	// Array buffer for midi data waiting to be transfered
@@ -336,7 +294,7 @@ typedef struct MidiInterface
 	MidiPendingRxType pendingRxType;		// What type of midi data is pending reception
 	uint8_t pendingNumData;					// Number of bytes receiver is waiting for
 	uint8_t newMessage;						// Flag to determine if a complete MIDI message has been received
-#endif
+
 	/* Callback handles */
 	void (*mNoteOffCallback)(void* midiHandle, uint8_t channel, uint8_t note, uint8_t velocity);
 	void (*mNoteOnCallback)(void* midiHandle, uint8_t channel, uint8_t note, uint8_t velocity);
@@ -358,10 +316,24 @@ typedef struct MidiInterface
 	void (*mSystemResetCallback)(void* midiHandle);
 } MidiInterface;
 
+typedef enum
+{
+	TapNoQuantise,
+	TempoPoint5Quantise,
+	Tempo1PointQuantise
+} TapTempoQuantisation;
+
+// Non-volatile data for MIDI clock configuration
+typedef struct
+{
+	MidiInterface** midiHandles;
+	TapTempoQuantisation quantise;
+} MidiClockConfig;
+
 typedef struct
 {
 	MidiClockState state;
-	MidiInterface** midiHandles;
+	MidiClockConfig* config;	// Pointer to clock config
 	MidiClockSubDivision subDivision;
 	uint16_t bpm;
 #ifdef FRAMEWORK_STM32CUBE
@@ -375,7 +347,10 @@ typedef struct
 	int statusLed;
 	int switchIndex;
 	uint8_t useLed;
+	volatile uint8_t ledIndicatorState;
 } MidiClockTx;
+
+
 
 extern uint8_t midiInChannel;	// MIDI in channel is set to omni by default
 extern uint32_t sysExId;
@@ -414,17 +389,17 @@ void sendTimeCodeQuarterFrame(DataByte  inTypeNibble,
 void sendTimeCodeQuarterFrame(DataByte  inData);
 */
 
-MidiErrorState midi_send(	MidiInterface* midiHandle, MidiDataType type, MidiDataByte data1,
+void midi_Send(	MidiInterface* midiHandle, MidiDataType type, MidiDataByte data1,
 													MidiDataByte data2, MidiChannel channel);
-MidiErrorState midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId);
-MidiErrorState midi_sendPacket(MidiInterface* midiHandle);
+void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId);
+void midi_sendPacket(MidiInterface* midiHandle);
 
 
 MidiErrorState midi_read(MidiInterface *midiHandle);
 MidiErrorState midi_readCustom(MidiInterface *midiHandle, uint8_t* buf, uint16_t* numCopiedBytes);
-MidiErrorState midi_rxUartHandler(MidiInterface* midiHandle);
-MidiErrorState midi_errorUartHandler(MidiInterface* midiHandle);
-MidiErrorState midi_txUartHandler(MidiInterface* midiHandle);
+void midi_rxUartHandler(MidiInterface* midiHandle);
+void midi_errorUartHandler(MidiInterface* midiHandle);
+void midi_txUartHandler(MidiInterface* midiHandle);
 
 /* Utility */
 MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel);
@@ -438,7 +413,7 @@ void midi_convertNoteNumberToText(uint8_t number, char* str);
 #ifdef USE_MIDI_CLOCK
 MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** midiHandles, uint8_t numHandles);
 MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo);
-void midi_clockInit(MidiClockTx* midiClock, TIM_HandleTypeDef* htim);
+void midi_clockInit(MidiClockTx* midiClock);
 void midi_clockStart(MidiClockTx* midiClock);
 void midi_clockStop(MidiClockTx* midiClock);
 void midi_clockSend(MidiClockTx* midiClock);
@@ -477,6 +452,7 @@ MidiErrorState midi_sendSongSelect(MidiDataByte  inSongNumber);
 MidiErrorState midi_sendTuneRequest();
 MidiErrorState midi_sendRealTime(MidiDataType inType);
 
-	//void launchCallback();
+unsigned encodeSysEx(const uint8_t* inData, uint8_t* outSysEx, unsigned inLength, uint8_t inFlipHeaderBits);
+unsigned decodeSysEx(const uint8_t* inSysEx, uint8_t* outData, unsigned inLength, uint8_t inFlipHeaderBits);
 
 #endif /* MIDI_H_ */
