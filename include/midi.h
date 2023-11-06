@@ -192,6 +192,16 @@ typedef enum
 	MidiClockStopped
 } MidiClockState;
 
+typedef struct
+{
+	MidiChannel channel;
+	MidiDataType type;
+	MidiDataByte data1;
+	MidiDataByte data2;
+	uint8_t valid;
+	uint8_t length;
+} MidiMessageInfo;
+
 // MIDI Interface structure
 //typedef struct MidiInterface;
 
@@ -223,7 +233,12 @@ typedef struct MidiInterface
 	MidiState txState;						// Current state of the tx transport interface (ie. transmitting or ready)
 	MidiPendingRxType pendingRxType;		// What type of midi data is pending reception
 	uint8_t pendingNumData;					// Number of bytes receiver is waiting for
+	uint8_t pendingMessageIndex;			// Index of the current byte in the pending message
+	uint8_t pendingMessage[3];				// Buffer for the pending message
+	MidiMessageInfo message;
 	uint8_t newMessage;						// Flag to determine if a complete MIDI message has been received
+	uint32_t lastMessageTime;				// Time of last message received
+	
 
 	/* Callback handles */
 	void (*mNoteOffCallback)(void* midiHandle, uint8_t channel, uint8_t note, uint8_t velocity);
@@ -231,7 +246,7 @@ typedef struct MidiInterface
 	void (*mAfterTouchPolyCallback)(void* midiHandle, uint8_t channel, uint8_t note, uint8_t  elocity);
 	void (*mControlChangeCallback)(void* midiHandle, uint8_t channel, uint8_t number, uint8_t value);
 	void (*mProgramChangeCallback)(void* midiHandle, uint8_t channel, uint8_t number);
-	void (*mAfterTouchchannelCallback)(void* midiHandle, uint8_t channel, uint8_t value);
+	void (*mAfterTouchChannelCallback)(void* midiHandle, uint8_t channel, uint8_t value);
 	void (*mPitchBendCallback)(void* midiHandle, uint8_t channel, int value);
 	void (*mSystemExclusiveCallback)(void* midiHandle, uint16_t size);
 	void (*mTimeCodeQuarterFrameCallback)(void* midiHandle, uint8_t data);
@@ -295,10 +310,10 @@ MidiErrorState midi_assignSysExId(uint32_t id);
 void midi_assignChannel(uint8_t newChannel);
 
 /* IO */
-MidiErrorState midi_sendNoteOn(MidiInterface* midiHandle, MidiDataByte  inNoteNumber, MidiDataByte  inVelocity, MidiChannel inChannel);
-MidiErrorState midi_sendNoteOff(MidiInterface* midiHandle, MidiDataByte  inNoteNumber, MidiDataByte  inVelocity, MidiChannel inChannel);
-MidiErrorState midi_sendProgramChange(MidiInterface* midiHandle, MidiDataByte  inProgramNumber, MidiChannel inChannel);
-MidiErrorState midi_sendControlChange(MidiInterface* midiHandle, MidiDataByte  inControlNumber, MidiDataByte  inControlValue, MidiChannel inChannel);
+void midi_SendNoteOn(MidiInterface* midiHandle, MidiDataByte  inNoteNumber, MidiDataByte  inVelocity, MidiChannel inChannel);
+void midi_SendNoteOff(MidiInterface* midiHandle, MidiDataByte  inNoteNumber, MidiDataByte  inVelocity, MidiChannel inChannel);
+void midi_SendProgramChange(MidiInterface* midiHandle, MidiDataByte  inProgramNumber, MidiChannel inChannel);
+void midi_SendControlChange(MidiInterface* midiHandle, MidiDataByte  inControlNumber, MidiDataByte  inControlValue, MidiChannel inChannel);
 /* TODO
 void sendPitchBend(int inPitchValue,    Channel inchannel);
 void sendPitchBend(double inPitchValue, Channel inchannel);
@@ -321,7 +336,7 @@ void sendTimeCodeQuarterFrame(DataByte  inData);
 
 void midi_Send(	MidiInterface* midiHandle, MidiDataType type, MidiDataByte data1,
 													MidiDataByte data2, MidiChannel channel);
-void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId);
+void midi_SendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId);
 void midi_sendPacket(MidiInterface* midiHandle);
 
 
@@ -333,8 +348,6 @@ void midi_txUartHandler(MidiInterface* midiHandle);
 
 /* Utility */
 MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel);
-MidiErrorState midi_ringBufferPut(MidiRingBuf* buffer, uint8_t data);
-MidiErrorState midi_ringBufferGet(MidiRingBuf* buffer, uint8_t* data);
 int midi_numDataBytesForMessage(MidiStatusByte status);
 MidiDataType midi_getStatusType(uint8_t status);
 void midi_convertNoteNumberToText(uint8_t number, char* str);

@@ -22,5 +22,7 @@ uint16_t midi_numDataRingBuffer(MidiRingBuf* buffer);
 void midi_advanceRingBufferPointer(MidiRingBuf* buffer);
 void midi_retreatRingBufferPointer(MidiRingBuf* buffer);
 uint8_t midi_ringBufferEmpty(MidiRingBuf* buffer);
+uint8_t midi_ringBufferGet(MidiRingBuf* buffer, uint8_t* data);
+uint8_t midi_ringBufferPut(MidiRingBuf* buffer, uint8_t data);
 
 #endif // MIDI_BUFFER_H

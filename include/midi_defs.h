@@ -18,10 +18,10 @@ static const uint16_t ActiveSensingTimeout = 300;
 // -----------------------------------------------------------------------------
 // Type definitions
 
-typedef uint8_t StatusByte;
-typedef uint8_t DataByte;
-typedef uint8_t Channel;
-typedef uint8_t FilterMode;
+typedef uint8_t MidiStatusByte;
+typedef uint8_t MidiDataByte;
+typedef uint8_t MidiChannel;
+typedef uint8_t MidiFilterMode;
 
 // -----------------------------------------------------------------------------
 // Errors

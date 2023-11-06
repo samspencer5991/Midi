@@ -23,12 +23,19 @@
 #define STATUS_BYTE_NUM 1
 
 uint32_t sysExId = 0;
-uint8_t midiInChannel;	// MIDI in channel is set to omni by default
+MidiChannel midiInChannel;	// MIDI in channel is set to omni by default
 uint8_t numMidiInterfaces = 0;
 
 /*	PRIVATE FUNCTION PROTOTYPES			*/
 /* MIDI DATA PFP*/
 MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel);
+uint8_t isChannelMessage(MidiDataType inType);
+uint8_t midi_InputFilter(MidiInterface *midiHandle, MidiChannel inChannel);
+uint8_t midi_ParseInput(MidiInterface* midiHandle);
+void midi_LaunchCallback(MidiInterface* midiHandle);
+
+void read(MidiInterface *midiHandle);
+
 
 // -------------------- Clock -------------------- //
 #ifdef USE_MIDI_CLOCK
@@ -140,7 +147,7 @@ void midi_clockSendStop(MidiClockTx* midiClock)
 		{
 			break;
 		}
-		midi_send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
+		midi_Send(midiClock->config->midiHandles[i], Stop, 0, 0, 0);
 	}
 }
 
@@ -154,7 +161,7 @@ void midi_clockSendStart(MidiClockTx* midiClock)
 		{
 			break;
 		}
-		midi_send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
+		midi_Send(midiClock->config->midiHandles[i], Start, 0, 0, 0);
 	}
 }
 
@@ -164,7 +171,7 @@ void midi_clockSend(MidiClockTx* midiClock)
 	{
 		if(midiClock->config->midiHandles[i] != NULL && midiClock->config->midiHandles[i]->active)
 		{
-			midi_send(midiClock->config->midiHandles[i], Clock, 0, 0, 0);
+			midi_Send(midiClock->config->midiHandles[i], Clock, 0, 0, 0);
 		}
 	}
 	midiClock->messageCounter++;
@@ -282,7 +289,7 @@ MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHan
 	midiHandle->mAfterTouchPolyCallback = NULL;
 	midiHandle->mControlChangeCallback = NULL;
 	midiHandle->mProgramChangeCallback = NULL;
-	midiHandle->mAfterTouchchannelCallback = NULL;
+	midiHandle->mAfterTouchChannelCallback = NULL;
 	midiHandle->mPitchBendCallback = NULL;
 	midiHandle->mSystemExclusiveCallback = NULL;
 	midiHandle->mTimeCodeQuarterFrameCallback = NULL;
@@ -355,11 +362,10 @@ void midi_assignChannel(uint8_t newChannel)
   * @param none
   * @retval None
   */
-MidiErrorState midi_sendNoteOn(MidiInterface *midiHandle, MidiDataByte  inNoteNumber,
+void midi_SendNoteOn(MidiInterface *midiHandle, MidiDataByte  inNoteNumber,
 				MidiDataByte  inVelocity, MidiChannel inChannel)
 {
-	MidiErrorState status = midi_send(midiHandle, NoteOn, inNoteNumber, inVelocity, inChannel);
-	return status;
+	midi_Send(midiHandle, NoteOn, inNoteNumber, inVelocity, inChannel);
 }
 
 /**
@@ -367,11 +373,10 @@ MidiErrorState midi_sendNoteOn(MidiInterface *midiHandle, MidiDataByte  inNoteNu
   * @param none
   * @retval None
   */
-MidiErrorState midi_sendNoteOff(	MidiInterface *midiHandle, MidiDataByte  inNoteNumber,
+void midi_SendNoteOff(	MidiInterface *midiHandle, MidiDataByte  inNoteNumber,
 					MidiDataByte  inVelocity, MidiChannel inChannel)
 {
-	MidiErrorState status = midi_send(midiHandle, NoteOff, inNoteNumber, inVelocity, inChannel);
-	return status;
+	midi_Send(midiHandle, NoteOff, inNoteNumber, inVelocity, inChannel);
 }
 
 /**
@@ -379,11 +384,10 @@ MidiErrorState midi_sendNoteOff(	MidiInterface *midiHandle, MidiDataByte  inNote
   * @param none
   * @retval None
   */
-MidiErrorState midi_sendProgramChange(	MidiInterface *midiHandle, MidiDataByte  inProgramNumber,
+void midi_SendProgramChange(	MidiInterface *midiHandle, MidiDataByte  inProgramNumber,
 						MidiChannel inChannel)
 {
-	MidiErrorState status = midi_send(midiHandle, ProgramChange, inProgramNumber, NULL_BYTE, inChannel);
-	return status;
+	midi_Send(midiHandle, ProgramChange, inProgramNumber, NULL_BYTE, inChannel);
 }
 
 /**
@@ -391,18 +395,17 @@ MidiErrorState midi_sendProgramChange(	MidiInterface *midiHandle, MidiDataByte  
   * @param none
   * @retval None
   */
-MidiErrorState midi_sendControlChange( MidiInterface *midiHandle, MidiDataByte  inControlNumber,
+void midi_SendControlChange( MidiInterface *midiHandle, MidiDataByte  inControlNumber,
 						MidiDataByte  inControlValue, MidiChannel inChannel)
 {
-	MidiErrorState status = midi_send(midiHandle, ControlChange, inControlNumber, inControlValue, inChannel);
-	return status;
+	midi_Send(midiHandle, ControlChange, inControlNumber, inControlValue, inChannel);
 }
-
 
 
 // ------------------ Input ----------------- //
 MidiErrorState midi_read(MidiInterface *midiHandle)
 {
+	/*
 	// Check to see if any new complete messages have been received
 	if(midiHandle->newMessage)
 	{
@@ -657,6 +660,26 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 		return MidiOk;
 	}
 	return MidiNoData;
+	*/
+	read(midiHandle);
+	return MidiOk;
+}
+
+void read(MidiInterface *midiHandle)
+{
+	if(midiInChannel >= MIDI_CHANNEL_OFF)
+	{
+		return;
+	}
+	if(!midi_ParseInput(midiHandle))
+	{
+		return;
+	}
+	if(midi_InputFilter(midiHandle, midiInChannel))
+	{
+		midi_LaunchCallback(midiHandle);
+	}
+	// Thru handling
 }
 
 /*
@@ -713,6 +736,338 @@ MidiErrorState midi_readCustom(MidiInterface *midiHandle, uint8_t* buf, uint16_t
 		return MidiOk;
 	}
 	return MidiNoData;
+}
+
+uint8_t midi_InputFilter(MidiInterface *midiHandle, MidiChannel inChannel)
+{
+	// This method handles recognition of channel
+
+	// First, check if the received message is Channel
+	if (midiHandle->message.type >= NoteOff && midiHandle->message.type <= PitchBend)
+	{
+		// Then we need to know if we listen to it
+		if ((midiHandle->message.channel == inChannel) ||
+			(inChannel == MIDI_CHANNEL_OMNI))
+		{
+			return true;
+		}
+		else
+		{
+			// We don't listen to this channel
+			return false;
+		}
+	}
+	else
+	{
+		// System messages are always received
+		return true;
+	}
+}
+
+uint8_t midi_ParseInput(MidiInterface* midiHandle)
+{
+	// Parsing algorithm:
+	// Get a byte from the serial buffer.
+	// If there is no pending message to be recomposed, start a new one.
+	//  - Find type and channel (if pertinent)
+	//  - Look for other bytes in buffer, call parser recursively,
+	//    until the message is assembled or the buffer is empty.
+	// Else, add the extracted byte to the pending message, and check validity.
+	// When the message is done, store it.
+
+	uint8_t extracted;
+	if(midiHandle->deviceType == UartMidi)
+	{
+		if(midi_ringBufferGet(&midiHandle->rxBuf, &extracted) != MIDI_BUFFER_OK)
+			return 0;
+	}
+	else if(midiHandle->deviceType == UsbMidi)
+	{
+		if(!tud_midi_stream_read(&extracted, 1))
+		{
+			return 0;
+		}
+	}
+
+	// Ignore Undefined
+	if (extracted == Undefined)
+		midi_ParseInput(midiHandle);
+
+	if (midiHandle->pendingMessageIndex == 0)
+	{
+		// Start a new pending message
+		midiHandle->pendingMessage[0] = extracted;
+
+		const MidiDataType pendingType = midi_getStatusType(midiHandle->pendingMessage[0]);
+
+		switch (pendingType)
+		{
+			// 1 byte messages
+			case Start:
+			case Continue:
+			case Stop:
+			case Clock:
+			case ActiveSensing:
+			case SystemReset:
+			case TuneRequest:
+					// Handle the message type directly here.
+					midiHandle->message.type    = pendingType;
+					midiHandle->message.channel = 0;
+					midiHandle->message.data1   = 0;
+					midiHandle->message.data2   = 0;
+					midiHandle->message.valid   = true;
+
+					// Do not reset all input attributes, Running Status must remain unchanged.
+					// We still need to reset these
+					midiHandle->pendingMessageIndex = 0;
+					midiHandle->pendingNumData = 0;
+
+					return true;
+					break;
+
+			// 2 bytes messages
+			case ProgramChange:
+			case AfterTouchChannel:
+			case TimeCodeQuarterFrame:
+			case SongSelect:
+					midiHandle->pendingNumData = 2;
+					break;
+
+			// 3 bytes messages
+			case NoteOn:
+			case NoteOff:
+			case ControlChange:
+			case PitchBend:
+			case AfterTouchPoly:
+			case SongPosition:
+					midiHandle->pendingNumData = 3;
+					break;
+
+			case SystemExclusive:
+			case SystemExclusiveEnd:
+					// The message can be any length
+					// between 3 and MidiMessage::sSysExMaxSize bytes
+					//midiHandle->pendingNumData = MidiMessage::sSysExMaxSize;
+					//midiHandle->message.sysexArray[0] = pendingType;
+					break;
+
+			case InvalidType:
+			default:
+					midiHandle->pendingMessageIndex = 0;
+					midiHandle->pendingNumData = 0;
+					return false;
+					break;
+		}
+
+		if (midiHandle->pendingMessageIndex >= (midiHandle->pendingNumData - 1))
+		{
+			// Reception complete
+			midiHandle->message.type    = pendingType;
+			midiHandle->message.channel = midi_getStatusType(midiHandle->pendingMessage[0]);
+			midiHandle->message.data1   = midiHandle->pendingMessage[1];
+			midiHandle->message.data2   = 0; // Completed new message has 1 data byte
+			midiHandle->message.length  = 1;
+
+			midiHandle->pendingMessageIndex = 0;
+			midiHandle->pendingNumData = 0;
+			midiHandle->message.valid = true;
+
+			return true;
+		}
+		else
+		{
+			// Waiting for more data
+			midiHandle->pendingMessageIndex++;
+		}
+
+		return midi_ParseInput(midiHandle);
+	}
+	else
+	{
+		// First, test if this is a status byte
+		if (extracted >= 0x80)
+		{
+			// Reception of status bytes in the middle of an uncompleted message
+			// are allowed only for interleaved Real Time message or EOX
+			switch (extracted)
+			{
+					case Clock:
+					case Start:
+					case Continue:
+					case Stop:
+					case ActiveSensing:
+					case SystemReset:
+
+						// Here we will have to extract the one-byte message,
+						// pass it to the structure for being read outside
+						// the MIDI class, and recompose the message it was
+						// interleaved into. Oh, and without killing the running status..
+						// This is done by leaving the pending message as is,
+						// it will be completed on next calls.
+
+						midiHandle->message.type    = (MidiDataType)extracted;
+						midiHandle->message.data1   = 0;
+						midiHandle->message.data2   = 0;
+						midiHandle->message.channel = 0;
+						midiHandle->message.length  = 1;
+						midiHandle->message.valid   = true;
+
+						return true;
+
+						// Exclusive
+					case SystemExclusive:
+					case SystemExclusiveEnd:
+					/*
+						if ((midiHandle->message.sysexArray[0] == SystemExclusive)
+						||  (midiHandle->message.sysexArray[0] == SystemExclusiveEnd))
+						{
+							// Store the last byte (EOX)
+							midiHandle->message.sysexArray[midiHandle->pendingMessageIndex++] = extracted;
+							midiHandle->message.type = SystemExclusive;
+
+							// Get length
+							midiHandle->message.data1   = midiHandle->pendingMessageIndex & 0xff; // LSB
+							midiHandle->message.data2   = byte(midiHandle->pendingMessageIndex >> 8);   // MSB
+							midiHandle->message.channel = 0;
+							midiHandle->message.length  = midiHandle->pendingMessageIndex;
+							midiHandle->message.valid   = true;
+
+							resetInput();
+
+							return true;
+						}
+						
+						else
+						{
+							// Well well well.. error.
+							mLastError |= 1UL << ErrorParse; // set the error bits
+							if (mErrorCallback)
+									mErrorCallback(mLastError); // LCOV_EXCL_LINE
+
+							resetInput();
+							return false;
+						}
+						*/
+
+					default:
+						break; // LCOV_EXCL_LINE - Coverage blind spot
+			}
+		}
+
+		// Add extracted data byte to pending message
+		if ((midiHandle->pendingMessage[0] == SystemExclusive)
+		||  (midiHandle->pendingMessage[0] == SystemExclusiveEnd))
+		{
+			//midiHandle->message.sysexArray[midiHandle->pendingMessageIndex] = extracted;
+		}
+		else
+		{
+			midiHandle->pendingMessage[midiHandle->pendingMessageIndex] = extracted;
+		}
+
+		// Now we are going to check if we have reached the end of the message
+		if (midiHandle->pendingMessageIndex >= (midiHandle->pendingNumData - 1))
+		{
+			// SysEx larger than the allocated buffer size,
+			// Split SysEx like so:
+			//   first:  0xF0 .... 0xF0
+			//   midlle: 0xF7 .... 0xF0
+			//   last:   0xF7 .... 0xF7
+			/*
+			if ((midiHandle->pendingMessage[0] == SystemExclusive)
+			||  (midiHandle->pendingMessage[0] == SystemExclusiveEnd))
+			{
+					auto lastByte = midiHandle->message.sysexArray[Settings::SysExMaxSize - 1];
+					midiHandle->message.sysexArray[Settings::SysExMaxSize - 1] = SystemExclusive;
+					midiHandle->message.type = SystemExclusive;
+
+					// Get length
+					midiHandle->message.data1   = Settings::SysExMaxSize & 0xff; // LSB
+					midiHandle->message.data2   = byte(Settings::SysExMaxSize >> 8); // MSB
+					midiHandle->message.channel = 0;
+					midiHandle->message.length  = Settings::SysExMaxSize;
+					midiHandle->message.valid   = true;
+
+					// No need to check against the inputChannel,
+					// SysEx ignores input channel
+					launchCallback();
+
+					midiHandle->message.sysexArray[0] = SystemExclusiveEnd;
+					midiHandle->message.sysexArray[1] = lastByte;
+
+					midiHandle->pendingMessageIndex = 2;
+
+					return false;
+			}
+			*/
+
+			midiHandle->message.type = midi_getStatusType(midiHandle->pendingMessage[0]);
+
+			if (isChannelMessage(midiHandle->message.type))
+					midiHandle->message.channel = midi_getStatusType(midiHandle->pendingMessage[0]);
+			else
+					midiHandle->message.channel = 0;
+
+			midiHandle->message.data1 = midiHandle->pendingMessage[1];
+			// Save data2 only if applicable
+			midiHandle->message.data2 = midiHandle->pendingNumData == 3 ? midiHandle->pendingMessage[2] : 0;
+
+			// Reset local variables
+			midiHandle->pendingMessageIndex = 0;
+			midiHandle->pendingNumData = 0;
+
+			midiHandle->message.valid = true;
+
+			return true;
+		}
+		else
+		{
+			// Then update the index of the pending message.
+			midiHandle->pendingMessageIndex++;
+
+			return midi_ParseInput(midiHandle);
+		}
+	}
+	return false;
+}
+
+void midi_LaunchCallback(MidiInterface* midiHandle)
+{
+	// The order is mixed to allow frequent messages to trigger their callback faster.
+	switch (midiHandle->message.type)
+	{
+			// Notes
+		case NoteOff:               if (midiHandle->mNoteOffCallback != NULL)               midiHandle->mNoteOffCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1, midiHandle->message.data2);   break;
+		case NoteOn:                if (midiHandle->mNoteOnCallback != NULL)                midiHandle->mNoteOnCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1, midiHandle->message.data2);    break;
+
+			// Real-time messages
+		case Clock:                 if (midiHandle->mClockCallback != NULL)                 midiHandle->mClockCallback(midiHandle);           break;
+		case Start:                 if (midiHandle->mStartCallback != NULL)                 midiHandle->mStartCallback(midiHandle);           break;
+		case Continue:              if (midiHandle->mContinueCallback != NULL)              midiHandle->mContinueCallback(midiHandle);        break;
+		case Stop:                  if (midiHandle->mStopCallback != NULL)                  midiHandle->mStopCallback(midiHandle);            break;
+		case ActiveSensing:         if (midiHandle->mActiveSensingCallback != NULL)         midiHandle->mActiveSensingCallback(midiHandle);   break;
+
+			// Continuous controllers
+		case ControlChange:         if (midiHandle->mControlChangeCallback != NULL)         midiHandle->mControlChangeCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1, midiHandle->message.data2);    break;
+		case PitchBend:             if (midiHandle->mPitchBendCallback != NULL)             midiHandle->mPitchBendCallback(midiHandle, midiHandle->message.channel, (int)((midiHandle->message.data1 & 0x7f) | ((midiHandle->message.data2 & 0x7f) << 7)) + MIDI_PITCHBEND_MIN); break;
+		case AfterTouchPoly:        if (midiHandle->mAfterTouchPolyCallback != NULL)        midiHandle->mAfterTouchPolyCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1, midiHandle->message.data2);    break;
+		case AfterTouchChannel:     if (midiHandle->mAfterTouchChannelCallback != NULL)     midiHandle->mAfterTouchChannelCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
+
+		case ProgramChange:         if (midiHandle->mProgramChangeCallback != NULL)         midiHandle->mProgramChangeCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
+		//case SystemExclusive:       if (midiHandle->mSystemExclusiveCallback != NULL)       mSystemExclusiveCallback(midiHandle->message.sysexArray, midiHandle->message.getSysExSize());    break;
+
+			// Occasional messages
+		case TimeCodeQuarterFrame:  if (midiHandle->mTimeCodeQuarterFrameCallback != NULL)  midiHandle->mTimeCodeQuarterFrameCallback(midiHandle, midiHandle->message.data1);    break;
+		case SongPosition:          if (midiHandle->mSongPositionCallback != NULL)          midiHandle->mSongPositionCallback(midiHandle, (unsigned)((midiHandle->message.data1 & 0x7f) | ((midiHandle->message.data2 & 0x7f) << 7)));    break;
+		case SongSelect:            if (midiHandle->mSongSelectCallback != NULL)            midiHandle->mSongSelectCallback(midiHandle, midiHandle->message.data1);    break;
+		case TuneRequest:           if (midiHandle->mTuneRequestCallback != NULL)           midiHandle->mTuneRequestCallback(midiHandle);    break;
+
+		case SystemReset:           if (midiHandle->mSystemResetCallback != NULL)           midiHandle->mSystemResetCallback(midiHandle);    break;
+
+		case InvalidType:
+		default:
+			break; // LCOV_EXCL_LINE - Unreacheable code, but prevents unhandled case warning.
+	}
 }
 
 
@@ -953,7 +1308,7 @@ void midi_setHandleProgramChange(MidiInterface *midiHandle, void (*fptr)(void* m
 
 void midi_setHandleAfterTouchchannel(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  Channel, uint8_t  pressure))
 {
-	midiHandle->mAfterTouchchannelCallback = fptr;
+	midiHandle->mAfterTouchChannelCallback = fptr;
 }
 
 void midi_setHandlePitchBend(MidiInterface* midiHandle, void (*fptr)(void* midiHandle, uint8_t  Channel, int bend))
@@ -1098,7 +1453,7 @@ void midi_Send(	MidiInterface *midiHandle, MidiDataType type,
 	return;
 }
 
-void midi_sendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId)
+void midi_SendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uint32_t sysExId)
 {
 	// If a transmission is already in process, queue the data up in the txBuf
 	if(midiHandle->txState == MidiBusy)
@@ -1355,10 +1710,68 @@ unsigned decodeSysEx(const uint8_t* inSysEx, uint8_t* outData,
 		{
 			const uint8_t body     = inSysEx[i];
 			const uint8_t shift    = inFlipHeaderBits ? 6 - byteIndex : byteIndex;
-			const uint8_t msb      = byte(((msbStorage >> shift) & 1) << 7);
+			const uint8_t msb      = (uint8_t)(((msbStorage >> shift) & 1) << 7);
 			byteIndex--;
 			outData[count++] = msb | body;
 		}
 	}
 	return count;
+}
+
+void midi_convertNoteNumberToText(uint8_t number, char* str)
+{
+	// First get the octave number (uses C3 = 60 convention)
+	int octave = (number/12) - 2;
+	// Then get the note name (C, D, E, etc...)
+	uint8_t noteDegree = number % 12;
+	switch(noteDegree)
+	{
+	case 0:
+		sprintf(str,"C%d",octave);
+		break;
+	case 1:
+		sprintf(str,"C#/Db%d",octave);
+		break;
+	case 2:
+		sprintf(str,"D%d",octave);
+		break;
+	case 3:
+		sprintf(str,"D#/Eb%d",octave);
+		break;
+	case 4:
+		sprintf(str,"E%d",octave);
+		break;
+	case 5:
+		sprintf(str,"F%d",octave);
+		break;
+	case 6:
+		sprintf(str,"F#/Gb%d",octave);
+		break;
+	case 7:
+		sprintf(str,"G%d",octave);
+		break;
+	case 8:
+		sprintf(str,"G#/Ab%d",octave);
+		break;
+	case 9:
+		sprintf(str,"A%d",octave);
+		break;
+	case 10:
+		sprintf(str,"A#/Bb%d",octave);
+		break;
+	case 11:
+		sprintf(str,"B%d",octave);
+		break;
+	}
+}
+
+uint8_t isChannelMessage(MidiDataType inType)
+{
+    return (inType == NoteOff           ||
+            inType == NoteOn            ||
+            inType == ControlChange     ||
+            inType == AfterTouchPoly    ||
+            inType == AfterTouchChannel ||
+            inType == PitchBend         ||
+            inType == ProgramChange);
 }
