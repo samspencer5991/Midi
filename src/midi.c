@@ -34,8 +34,6 @@ uint8_t midi_InputFilter(MidiInterface *midiHandle, MidiChannel inChannel);
 uint8_t midi_ParseInput(MidiInterface* midiHandle);
 void midi_LaunchCallback(MidiInterface* midiHandle);
 
-void read(MidiInterface *midiHandle);
-
 
 // -------------------- Clock -------------------- //
 #ifdef USE_MIDI_CLOCK
@@ -315,7 +313,6 @@ MidiErrorState midi_begin(MidiInterface* midiHandle)
 	if(midiHandle->direction != MidiOutOnly)
 	{
 		// Set the state to waiting for the status byte
-		midiHandle->pendingRxType = MidiStatus;
 		if(midiHandle->deviceType == UartMidi)
 		{
 			HAL_UART_AbortReceive_IT(midiHandle->uartHandle);
@@ -661,11 +658,10 @@ MidiErrorState midi_read(MidiInterface *midiHandle)
 	}
 	return MidiNoData;
 	*/
-	read(midiHandle);
 	return MidiOk;
 }
 
-void read(MidiInterface *midiHandle)
+void midi_Read(MidiInterface *midiHandle)
 {
 	if(midiInChannel >= MIDI_CHANNEL_OFF)
 	{
@@ -680,6 +676,17 @@ void read(MidiInterface *midiHandle)
 		midi_LaunchCallback(midiHandle);
 	}
 	// Thru handling
+	for(int i=0; i<numMidiInterfaces; i++)
+	{
+		// Check that the thru handle is valid
+		if( midiHandle->thruHandles[i] != NULL && midiHandle->thruHandles[i]->active
+				&& midiHandle->thruHandles[i]->direction != MidiInOnly)
+		{
+			midi_Send(	midiHandle->thruHandles[i], midiHandle->message.type, midiHandle->message.data1,
+							midiHandle->message.data2, midiHandle->message.channel);
+			//midiHandle->thruHandles[i]->txQueueIndex = 0;
+		}
+	}
 }
 
 /*
@@ -1104,166 +1111,11 @@ void midi_txUartHandler(MidiInterface* midiHandle)
   */
 void midi_rxUartHandler(MidiInterface* midiHandle)
 {
-	// If the handle is waiting for a status byte
-	if(midiHandle->pendingRxType == MidiStatus)
-	{
-		/* First, check if a status byte was received as expected
-		 * If not, keep receiving single bytes until a valid status byte is received.
-		 * This can occur if the device is connected midway through a midi message, or a fault in another device.
-		 */
-		uint8_t upperNibble = midiHandle->rxRawBuf[0] & 0xf0;
-		if(!((upperNibble >> 7) & 1))
-		{
-
-			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-			{
-				return;
-			}
-		}
-		// Copy the received byte into the rxBuffer
-		if(midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]) != MidiOk)
-		{
-			return;
-		}
-
-		// Channel Voice messages
-		else if(upperNibble != 0xf0)
-		{
-			// Program change is the only channel voice message which uses 1 data byte
-			// All other channel voice messages require 2 data bytes to be received
-			if(upperNibble != ProgramChange)
-			{
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 2) != HAL_OK)
-				{
-					return;
-				}
-				midiHandle->pendingNumData = 2;
-			}
-			else
-			{
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-				{
-					return;
-				}
-				midiHandle->pendingNumData = 1;
-			}
-			midiHandle->pendingRxType = MidiData;
-		}
-
-		// System Common and System Real-Time messages
-		else
-		{
-			// Get the required number of bytes for the message
-			int numBytes = midi_numDataBytesForMessage(midiHandle->rxBuf.buffer[0]);
-
-			if(numBytes == 0)
-			{
-				midiHandle->pendingNumData = 1;
-				midiHandle->newMessage = TRUE;
-				midiHandle->pendingRxType = MidiStatus;
-
-				// Once data has been received, begin listening for a new status message
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-				{
-					return;
-				}
-			}
-			// Time code quarter frame and song select messages only require 1 data byte
-			if(numBytes == 1)
-			{
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-				{
-					return;
-				}
-				midiHandle->pendingNumData = 1;
-				midiHandle->pendingRxType = MidiData;
-			}
-			// Song position messages required 2 data bytes
-			else if(numBytes == 2)
-			{
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 2) != HAL_OK)
-				{
-					return;
-				}
-				midiHandle->pendingNumData = 2;
-				midiHandle->pendingRxType = MidiData;
-			}
-
-			// Sysex
-			else if(numBytes == -1)
-			{
-				// Receive data in a buffer until end of sysex byte is sent
-				midiHandle->pendingRxType = MidiSysEx;
- 				midiHandle->pendingNumData = 1;
-				if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-				{
-					return;
-				}
-			}
-		}
-	}
-
-	// If device has received a status byte and is waiting on the message data
-	else if(midiHandle->pendingRxType == MidiData)
-	{
-		// Check if a valid data byte was actually received
-		if(((midiHandle->rxRawBuf[0] >> 7) & 1))
-		{
-			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-			{
-				return;
-			}
-			midiHandle->pendingRxType = MidiStatus;
-		}
-		else
-		{
-			midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]);
-			// Check if a second data byte is required to be copied into the rxBuf
-			if(midiHandle->pendingNumData == 2)
-			{
-				if(((midiHandle->rxRawBuf[1] >> 7) & 1))
-				{
-					if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-					{
-						return;
-					}
-					midiHandle->pendingRxType = MidiStatus;
-				}
-				else
-				{
-					midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[1]);
-				}
-			}
-			midiHandle->pendingNumData = 1;
-			midiHandle->newMessage = TRUE;
-			midiHandle->pendingRxType = MidiStatus;
-
-			// Once data has been received, begin listening for a new status message
-			if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-			{
-				return;
-			}
-		}
-	}
-
-	// Handle incoming SysEx data
-	else if(midiHandle->pendingRxType == MidiSysEx)
-	{
-		// Copy the latest received byte into the rxBuf, and check for a terminating message
-		midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]);
-		if(midiHandle->rxRawBuf[0] == SystemExclusiveEnd)
-		{
-			midiHandle->pendingNumData = 1;
-			midiHandle->newMessage = TRUE;
-			midiHandle->pendingRxType = MidiStatus;
-		}
-		// Once data has been received, begin listening for a new status message
-		if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
-		{
-			return;
-		}
-	}
-	return ;
+	// Store the newly read byte in the circular buffer
+	midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]);
+	// Prepare to read the next byte
+	HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1);
+	return;
 }
 
 void midi_errorUartHandler(MidiInterface* midiHandle)

@@ -231,7 +231,6 @@ typedef struct MidiInterface
 	uint16_t txBufIndex;						// Store the current buffer element, and also the number of elements
 	uint8_t txDataPending;					// Indicates whether there is new data waiting in the txBuf
 	MidiState txState;						// Current state of the tx transport interface (ie. transmitting or ready)
-	MidiPendingRxType pendingRxType;		// What type of midi data is pending reception
 	uint8_t pendingNumData;					// Number of bytes receiver is waiting for
 	uint8_t pendingMessageIndex;			// Index of the current byte in the pending message
 	uint8_t pendingMessage[3];				// Buffer for the pending message
@@ -340,7 +339,7 @@ void midi_SendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 void midi_sendPacket(MidiInterface* midiHandle);
 
 
-MidiErrorState midi_read(MidiInterface *midiHandle);
+void midi_Read(MidiInterface *midiHandle);
 MidiErrorState midi_readCustom(MidiInterface *midiHandle, uint8_t* buf, uint16_t* numCopiedBytes);
 void midi_rxUartHandler(MidiInterface* midiHandle);
 void midi_errorUartHandler(MidiInterface* midiHandle);
