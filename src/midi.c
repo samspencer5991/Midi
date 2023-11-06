@@ -948,7 +948,6 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 							return false;
 						}
 						*/
-
 					default:
 						break; // LCOV_EXCL_LINE - Coverage blind spot
 			}
