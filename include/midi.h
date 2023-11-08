@@ -101,12 +101,12 @@ typedef enum
 	CustomQueueNextSequentialStep,
 	CustomQueueSequentialStep,
 
-	CustomResetScrollingStep,
-	CustomIncrementScrollingStep,
-	CustomDecrementScrollingStep,
-	CustomGoToScrollingStep,
-	CustomQueueNextScrollingStep,
-	CustomQueueScrollingStep,
+	CustomResetScrollingValue,
+	CustomIncrementScrollingValue,
+	CustomDecrementScrollingValue,
+	CustomGoToScrollingValue,
+	CustomQueueNextScrollingValue,
+	CustomQueueScrollingValue,
 
 	// Bank navigation
 	CustomBankUp,
@@ -121,7 +121,6 @@ typedef enum
 	// Set list mode
 	CustomToggleSetListMode,
 	CustomToggleSetListBrowser,
-
 
 	// TRS switching
 	CustomTrsSwitchOut,
