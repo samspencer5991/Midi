@@ -112,6 +112,7 @@ typedef enum
 	CustomBankUp,
 	CustomBankDown,
 	CustomGoToBank,
+	CustomGoToLastBank,
 
 	// Expression pedal steps
 	CustomIncrementExpStep,
