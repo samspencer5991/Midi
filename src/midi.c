@@ -59,30 +59,9 @@ void midi_clockInit(MidiClockTx* midiClock)
 
 	for(uint8_t i = 0; i<numMidiInterfaces; i++)
 	{
-		midiClock->config->midiHandles[i] = NULL;
+		//midiClock->config->midiHandles[i] = NULL;
 	}
 	midi_clockSetTempo(midiClock, DEFAULT_CLOCK_BPM*10);
-}
-
-/**
-  * @brief
-  * @param
-  * @retval
-  */
-
-MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** midiHandles, uint8_t numHandles)
-{
-	// Ensure there is enough space to store the handle
-	if(numHandles > numMidiInterfaces || midiHandles == NULL || midiClock == NULL)
-	{
-		return MidiParamError;
-	}
-
-	for(int i=0; i<numHandles; i++)
-	{
-		midiClock->config->midiHandles[i] = midiHandles[i];
-	}
-	return MidiOk;
 }
 
 MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo)
@@ -100,7 +79,7 @@ MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo)
 		midiClock->bpm = newTempo;
 	}
 
-	uint32_t newPeriod = round((25000000 / midiClock->bpm) * MIDI_CLOCK_TIMER_OFFSET);
+	uint32_t newPeriod = round((25000000 / midiClock->bpm)) - 1;
 	midiClock->clockTim->Instance->ARR = newPeriod;
 	midiClock->clockTim->Init.Period = (uint16_t)newPeriod;
 	return MidiOk;
@@ -1223,7 +1202,7 @@ void midi_Send(	MidiInterface *midiHandle, MidiDataType type,
 									MidiDataByte data1, MidiDataByte data2, MidiChannel channel)
 {
 	// Check for valid channel and data type
-	if (channel >= MIDI_CHANNEL_OFF  || type < 0x80)
+	if (channel >= MIDI_CHANNEL_OFF  || type < 0x80 || midiHandle == NULL)
 	{
 		return;
 	}
@@ -1466,6 +1445,7 @@ void midi_sendPacket(MidiInterface* midiHandle)
 	// Reset the buffer index to indicate that they are empty
 	midiHandle->txQueueIndex = 0;
 	midiHandle->txBufIndex = 0;
+	midiHandle->txState = MidiReady;
 	return;
 }
 

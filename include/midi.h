@@ -41,7 +41,7 @@
 #define MIN_CLOCK_BPM					45
 #define DEFAULT_CLOCK_BPM				120
 #define MAX_CLOCK_BPM 					240
-#define MIDI_CLOCK_TIMER_OFFSET 		1.003		// Scaling factor to account for processing delays
+#define MIDI_CLOCK_TIMER_OFFSET 		1.00		// Scaling factor to account for processing delays
 #define NUM_TAP_INTERVALS				3			// Number of recorded times between tap tempo inputs
 #define LED_ACTIVE_CLOCK_MESSAGES	4
 #define MIDI_CLOCK_TAP_TIMEOUT		1500
@@ -119,8 +119,8 @@ typedef enum
 	CustomGoToExpStep,
 
 	// Set list mode
-	CustomToggleSetListMode,
-	CustomToggleSetListBrowser,
+	//CustomToggleSetListMode,
+	//CustomToggleSetListBrowser,
 
 	// TRS switching
 	CustomTrsSwitchOut,
@@ -269,7 +269,7 @@ typedef enum
 // Non-volatile data for MIDI clock configuration
 typedef struct
 {
-	MidiInterface** midiHandles;
+	MidiInterface* midiHandles[4];
 	TapTempoQuantisation quantise;
 } MidiClockConfig;
 
@@ -352,7 +352,6 @@ void midi_convertNoteNumberToText(uint8_t number, char* str);
 
 /* Clock */
 #ifdef USE_MIDI_CLOCK
-MidiErrorState midi_clockAssignHandle(MidiClockTx* midiClock, MidiInterface** midiHandles, uint8_t numHandles);
 MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo);
 void midi_clockInit(MidiClockTx* midiClock);
 void midi_clockStart(MidiClockTx* midiClock);
