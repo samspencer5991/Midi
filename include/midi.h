@@ -10,6 +10,8 @@
 #if FRAMEWORK_STM32CUBE
 #if defined(STM32G4xx)
 #include "stm32g4xx_hal.h"
+#elif defined(STM32G0xx)
+#include "stm32g0xx_hal.h"
 #endif
 #endif
 #include "stdint.h"
@@ -303,7 +305,7 @@ extern uint32_t sysExId;
 /* Init and Config */
 MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHandle, MidiDeviceType type,
 															MidiChannel setChannel, MidiInterfaceDirection direction,
-															uint8_t* ptrRxBuf, uint16_t size, IRQn_Type irq);
+															uint8_t* ptrRxBuf, uint16_t size);
 MidiErrorState midi_begin(MidiInterface* midiHandle);
 MidiErrorState midi_assignSysExId(uint32_t id);
 void midi_assignChannel(uint8_t newChannel);

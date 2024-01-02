@@ -217,7 +217,7 @@ void midi_turnOffMidiClock(MidiClockTx* midiClock)
 
 MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHandle, MidiDeviceType type,
 		MidiChannel setChannel, MidiInterfaceDirection direction, uint8_t* ptrRxBuf,
-		uint16_t size, IRQn_Type irq)
+		uint16_t size)
 {
 	// Assign data to the passed handle
 	midiHandle->direction = direction;
@@ -250,7 +250,6 @@ MidiErrorState midi_init(	MidiInterface* midiHandle, UART_HandleTypeDef* uartHan
 		midiHandle->uartHandle->RxISR = NULL;
 		// Once the error has been handled, restart
 	}
-	midiHandle->uartIRQn = irq;
 
 #ifndef USE_UART_FIFO
 	//Initialize the buffers
