@@ -988,7 +988,7 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 			midiHandle->message.type = midi_getStatusType(midiHandle->pendingMessage[0]);
 
 			if (isChannelMessage(midiHandle->message.type))
-					midiHandle->message.channel = midi_getStatusType(midiHandle->pendingMessage[0]);
+					midiHandle->message.channel = midiHandle->pendingMessage[0] & 0x0f;
 			else
 					midiHandle->message.channel = 0;
 
