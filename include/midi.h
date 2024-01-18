@@ -60,6 +60,8 @@
 #define MIDI_TIP		2
 #define MIDI_RING		3
 
+#define MIDI_MAX_SYSEX_SIZE		1024
+
 // Type Definitions
 typedef uint8_t MidiStatusByte;
 typedef uint8_t MidiDataByte;
@@ -201,7 +203,8 @@ typedef struct
 	MidiDataByte data1;
 	MidiDataByte data2;
 	uint8_t valid;
-	uint8_t length;
+	uint16_t length;
+	MidiDataByte sysexArray[MIDI_MAX_SYSEX_SIZE];
 } MidiMessageInfo;
 
 // MIDI Interface structure
@@ -233,7 +236,7 @@ typedef struct MidiInterface
 	uint16_t txBufIndex;						// Store the current buffer element, and also the number of elements
 	uint8_t txDataPending;					// Indicates whether there is new data waiting in the txBuf
 	MidiState txState;						// Current state of the tx transport interface (ie. transmitting or ready)
-	uint8_t pendingNumData;					// Number of bytes receiver is waiting for
+	uint16_t pendingNumData;					// Number of bytes receiver is waiting for
 	uint8_t pendingMessageIndex;			// Index of the current byte in the pending message
 	uint8_t pendingMessage[3];				// Buffer for the pending message
 	MidiMessageInfo message;
@@ -260,6 +263,7 @@ typedef struct MidiInterface
 	void (*mStopCallback)(void* midiHandle);
 	void (*mActiveSensingCallback)(void* midiHandle);
 	void (*mSystemResetCallback)(void* midiHandle);
+	void (*mErrorCallback)(void* midiHandle, int8_t error);
 } MidiInterface;
 
 typedef enum

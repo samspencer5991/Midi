@@ -32,8 +32,9 @@ MidiStatusByte midi_getStatus(MidiDataType inType, MidiChannel inChannel);
 uint8_t isChannelMessage(MidiDataType inType);
 uint8_t midi_InputFilter(MidiInterface *midiHandle, MidiChannel inChannel);
 uint8_t midi_ParseInput(MidiInterface* midiHandle);
+void midi_ResetInput(MidiInterface* midiHandle);
 void midi_LaunchCallback(MidiInterface* midiHandle);
-
+unsigned midi_getSysExSize();
 
 // -------------------- Clock -------------------- //
 #ifdef USE_MIDI_CLOCK
@@ -831,9 +832,9 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 			case SystemExclusive:
 			case SystemExclusiveEnd:
 					// The message can be any length
-					// between 3 and MidiMessage::sSysExMaxSize bytes
-					//midiHandle->pendingNumData = MidiMessage::sSysExMaxSize;
-					//midiHandle->message.sysexArray[0] = pendingType;
+					// between 3 and MIDI_MAX_SYSEX_SIZE bytes
+					midiHandle->pendingNumData = MIDI_MAX_SYSEX_SIZE;
+					midiHandle->message.sysexArray[0] = pendingType;
 					break;
 
 			case InvalidType:
@@ -902,7 +903,6 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 						// Exclusive
 					case SystemExclusive:
 					case SystemExclusiveEnd:
-					/*
 						if ((midiHandle->message.sysexArray[0] == SystemExclusive)
 						||  (midiHandle->message.sysexArray[0] == SystemExclusiveEnd))
 						{
@@ -912,12 +912,12 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 
 							// Get length
 							midiHandle->message.data1   = midiHandle->pendingMessageIndex & 0xff; // LSB
-							midiHandle->message.data2   = byte(midiHandle->pendingMessageIndex >> 8);   // MSB
+							midiHandle->message.data2   = (uint8_t)(midiHandle->pendingMessageIndex >> 8);   // MSB
 							midiHandle->message.channel = 0;
 							midiHandle->message.length  = midiHandle->pendingMessageIndex;
 							midiHandle->message.valid   = true;
 
-							resetInput();
+							midi_ResetInput(midiHandle);
 
 							return true;
 						}
@@ -925,14 +925,13 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 						else
 						{
 							// Well well well.. error.
-							mLastError |= 1UL << ErrorParse; // set the error bits
-							if (mErrorCallback)
-									mErrorCallback(mLastError); // LCOV_EXCL_LINE
+							//mLastError |= 1UL << ErrorParse; // set the error bits
+							//if (midiHandle->mErrorCallback)
+									//mErrorCallback(mLastError); // LCOV_EXCL_LINE
 
-							resetInput();
+							midi_ResetInput(midiHandle);
 							return false;
 						}
-						*/
 					default:
 						break; // LCOV_EXCL_LINE - Coverage blind spot
 			}
@@ -942,7 +941,7 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 		if ((midiHandle->pendingMessage[0] == SystemExclusive)
 		||  (midiHandle->pendingMessage[0] == SystemExclusiveEnd))
 		{
-			//midiHandle->message.sysexArray[midiHandle->pendingMessageIndex] = extracted;
+			midiHandle->message.sysexArray[midiHandle->pendingMessageIndex] = extracted;
 		}
 		else
 		{
@@ -957,24 +956,24 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 			//   first:  0xF0 .... 0xF0
 			//   midlle: 0xF7 .... 0xF0
 			//   last:   0xF7 .... 0xF7
-			/*
+
 			if ((midiHandle->pendingMessage[0] == SystemExclusive)
 			||  (midiHandle->pendingMessage[0] == SystemExclusiveEnd))
 			{
-					auto lastByte = midiHandle->message.sysexArray[Settings::SysExMaxSize - 1];
-					midiHandle->message.sysexArray[Settings::SysExMaxSize - 1] = SystemExclusive;
+					uint8_t lastByte = midiHandle->message.sysexArray[MIDI_MAX_SYSEX_SIZE - 1];
+					midiHandle->message.sysexArray[MIDI_MAX_SYSEX_SIZE - 1] = SystemExclusive;
 					midiHandle->message.type = SystemExclusive;
 
 					// Get length
-					midiHandle->message.data1   = Settings::SysExMaxSize & 0xff; // LSB
-					midiHandle->message.data2   = byte(Settings::SysExMaxSize >> 8); // MSB
+					midiHandle->message.data1   =MIDI_MAX_SYSEX_SIZE & 0xff; // LSB
+					midiHandle->message.data2   = (uint8_t)(MIDI_MAX_SYSEX_SIZE >> 8); // MSB
 					midiHandle->message.channel = 0;
-					midiHandle->message.length  = Settings::SysExMaxSize;
+					midiHandle->message.length  = MIDI_MAX_SYSEX_SIZE;
 					midiHandle->message.valid   = true;
 
 					// No need to check against the inputChannel,
 					// SysEx ignores input channel
-					launchCallback();
+					midi_LaunchCallback(midiHandle);
 
 					midiHandle->message.sysexArray[0] = SystemExclusiveEnd;
 					midiHandle->message.sysexArray[1] = lastByte;
@@ -983,7 +982,7 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 
 					return false;
 			}
-			*/
+
 
 			midiHandle->message.type = midi_getStatusType(midiHandle->pendingMessage[0]);
 
@@ -1015,6 +1014,13 @@ uint8_t midi_ParseInput(MidiInterface* midiHandle)
 	return false;
 }
 
+void midi_ResetInput(MidiInterface* midiHandle)
+{
+    midiHandle->pendingMessageIndex = 0;
+    midiHandle->pendingNumData = 0;
+    //mRunningStatus_RX = InvalidType;
+}
+
 void midi_LaunchCallback(MidiInterface* midiHandle)
 {
 	// The order is mixed to allow frequent messages to trigger their callback faster.
@@ -1038,7 +1044,7 @@ void midi_LaunchCallback(MidiInterface* midiHandle)
 		case AfterTouchChannel:     if (midiHandle->mAfterTouchChannelCallback != NULL)     midiHandle->mAfterTouchChannelCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
 
 		case ProgramChange:         if (midiHandle->mProgramChangeCallback != NULL)         midiHandle->mProgramChangeCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
-		//case SystemExclusive:       if (midiHandle->mSystemExclusiveCallback != NULL)       mSystemExclusiveCallback(midiHandle->message.sysexArray, midiHandle->message.getSysExSize());    break;
+		case SystemExclusive:       if (midiHandle->mSystemExclusiveCallback != NULL)       midiHandle->mSystemExclusiveCallback(midiHandle->message.sysexArray, midi_getSysExSize(midiHandle));    break;
 
 			// Occasional messages
 		case TimeCodeQuarterFrame:  if (midiHandle->mTimeCodeQuarterFrameCallback != NULL)  midiHandle->mTimeCodeQuarterFrameCallback(midiHandle, midiHandle->message.data1);    break;
@@ -1054,6 +1060,11 @@ void midi_LaunchCallback(MidiInterface* midiHandle)
 	}
 }
 
+unsigned midi_getSysExSize(MidiInterface* midiHandle) 
+{
+	const unsigned size = (midiHandle->message.data2) << 8 | midiHandle->message.data1;
+	return size > MIDI_MAX_SYSEX_SIZE ? MIDI_MAX_SYSEX_SIZE : size;
+}
 
 // ------------------ Events ----------------- //
 /**
