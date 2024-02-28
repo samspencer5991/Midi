@@ -732,7 +732,7 @@ uint8_t midi_InputFilter(MidiInterface *midiHandle, MidiChannel inChannel)
 	if (midiHandle->message.type >= NoteOff && midiHandle->message.type <= PitchBend)
 	{
 		// Then we need to know if we listen to it
-		if ((midiHandle->message.channel == inChannel) ||
+		if ((midiHandle->message.channel+1 == inChannel) ||
 			(inChannel == MIDI_CHANNEL_OMNI))
 		{
 			return true;
@@ -1044,7 +1044,7 @@ void midi_LaunchCallback(MidiInterface* midiHandle)
 		case AfterTouchChannel:     if (midiHandle->mAfterTouchChannelCallback != NULL)     midiHandle->mAfterTouchChannelCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
 
 		case ProgramChange:         if (midiHandle->mProgramChangeCallback != NULL)         midiHandle->mProgramChangeCallback(midiHandle, midiHandle->message.channel, midiHandle->message.data1);    break;
-		case SystemExclusive:       if (midiHandle->mSystemExclusiveCallback != NULL)       midiHandle->mSystemExclusiveCallback(midiHandle->message.sysexArray, midi_getSysExSize(midiHandle));    break;
+		case SystemExclusive:       if (midiHandle->mSystemExclusiveCallback != NULL)       midiHandle->mSystemExclusiveCallback(midiHandle, midi_getSysExSize(midiHandle));    break;
 
 			// Occasional messages
 		case TimeCodeQuarterFrame:  if (midiHandle->mTimeCodeQuarterFrameCallback != NULL)  midiHandle->mTimeCodeQuarterFrameCallback(midiHandle, midiHandle->message.data1);    break;
