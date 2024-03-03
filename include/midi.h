@@ -164,15 +164,15 @@ typedef enum
 
 typedef enum
 {
-	MidiClock4 			= 1,
-	MidiClock4T			= 2,
-	MidiClock4Dot		= 3,
-	MidiClock8 			= 4,
-	MidiClock8T 		= 5,
-	MidiClock8Dot 	= 6,
-	MidiClock16			= 7,
-	MidiClock16T		= 8,
-	MidiClock16Dot	= 9
+	MidiClock4 			= 0,
+	MidiClock4T			= 1,
+	MidiClock4Dot		= 2,
+	MidiClock8 			= 3,
+	MidiClock8T 		= 4,
+	MidiClock8Dot 		= 5,
+	MidiClock16			= 6,
+	MidiClock16T		= 7,
+	MidiClock16Dot		= 8
 } MidiClockSubDivision;
 
 // Simple type for tracking the state of a direction of the midi transport
