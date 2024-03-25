@@ -10,6 +10,8 @@
 #if FRAMEWORK_STM32CUBE
 #if defined(STM32G4xx)
 #include "stm32g4xx_hal.h"
+#elif defined(STM32H5xx)
+#include "stm32h5xx_hal.h"
 #elif defined(STM32G0xx)
 #include "stm32g0xx_hal.h"
 #endif
@@ -48,7 +50,11 @@
 #define LED_ACTIVE_CLOCK_MESSAGES	4
 #define MIDI_CLOCK_TAP_TIMEOUT		1500
 #define MIDI_CLOCK_NO_ASSIGN_INDEX	-1
+#ifndef USE_EXTENDED_INTERFACE_INDEXING
 #define MIDI_INTERFACE_INDEX_SIZE	8
+#else
+#define MIDI_INTERFACE_INDEX_SIZE	16
+#endif
 #define MIDI_CLOCK_NO_SWITCH_INDEX 	-1
 
 #define MIDI_CLOCK_LED_NONE			0
@@ -276,7 +282,7 @@ typedef enum
 // Non-volatile data for MIDI clock configuration
 typedef struct
 {
-	MidiInterface* midiHandles[4];
+	MidiInterface* midiHandles[NUM_MIDI_INTERFACES];
 	TapTempoQuantisation quantise;
 } MidiClockConfig;
 
