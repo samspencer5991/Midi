@@ -36,7 +36,13 @@ typedef enum
 {
 	InvalidType   				= 0x00,	// For notifying errors
 
-	// Custom
+	// HID keyboard messages
+	MidiKeyboardPress			= 0x60,	// Keyboard message for press and quick release
+	//MidiKeyboardHold 			= 0x61,	// Keyboard message for press with no release
+	//MidiKeyboardRelease		= 0x62,	// Keyboard message for release
+	//MidiKeyboardReleaseAll	= 0x63,	// Keyboard message for releasing all pressed keys
+
+	// Smart messages (custom)
 	MidiCustomMessage			= 0x70,	// Generic custom message
 	// Standard MIDI
 	NoteOff               	= 0x80, // Note Off
