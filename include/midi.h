@@ -369,6 +369,8 @@ MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo);
 void midi_clockInit(MidiClockTx* midiClock);
 void midi_clockStart(MidiClockTx* midiClock);
 void midi_clockStop(MidiClockTx* midiClock);
+void midi_clockResume(MidiClockTx* midiClock);
+void midi_clockPause(MidiClockTx* midiClock);
 void midi_clockSend(MidiClockTx* midiClock);
 void midi_clockSendStop(MidiClockTx* midiClock);
 void midi_clockSendStart(MidiClockTx* midiClock);

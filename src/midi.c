@@ -116,6 +116,20 @@ void midi_clockStop(MidiClockTx* midiClock)
 	}
 }
 
+// Resumes the MIDI clock timer without sending a start messages
+void midi_clockResume(MidiClockTx* midiClock)
+{
+	midiClock->state = MidiClockRunning;
+	HAL_TIM_Base_Start_IT(midiClock->clockTim);
+}
+
+// Stops the MIDI clock timer without sending a stop message
+void midi_clockPause(MidiClockTx* midiClock)
+{
+	midiClock->state = MidiClockStopped;
+	HAL_TIM_Base_Stop_IT(midiClock->clockTim);
+}
+
 void midi_clockSendStop(MidiClockTx* midiClock)
 {
 	midiClock->state = MidiClockStopped;

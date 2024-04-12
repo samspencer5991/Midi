@@ -1,6 +1,6 @@
 {
     "name": "Midi",
-    "version": "0.2.10",
+    "version": "0.2.11",
     "keywords": "midi",
     "description": "High performance MIDI library designed for complex triggers and handling",
     "repository": {
