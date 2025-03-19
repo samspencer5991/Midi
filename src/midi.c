@@ -80,9 +80,13 @@ MidiErrorState midi_clockSetTempo(MidiClockTx* midiClock, uint16_t newTempo)
 		midiClock->bpm = newTempo;
 	}
 
+	// 24 ppqn for MIDI clock gives the formula:
+	// period = (60 / bpm) * 10000000 / 24
+	// period = 25000000 / bpm
 	uint32_t newPeriod = round((25000000 / midiClock->bpm)) - 1;
 	midiClock->clockTim->Instance->ARR = newPeriod;
 	midiClock->clockTim->Init.Period = (uint16_t)newPeriod;
+	midiClock->clockTim->Instance->CNT = 0;
 	return MidiOk;
 }
 
@@ -395,6 +399,262 @@ void midi_SendControlChange( MidiInterface *midiHandle, MidiDataByte  inControlN
 // ------------------ Input ----------------- //
 MidiErrorState midi_read(MidiInterface *midiHandle)
 {
+	/*
+	// Check to see if any new complete messages have been received
+	if(midiHandle->newMessage)
+	{
+		while(midiHandle->newMessage)
+		{
+			uint16_t numBytes = 0;
+			// Get the oldest status byte in the buffer
+			MidiStatusByte status = 0;
+			MidiDataByte d1 = 0;
+			MidiDataByte d2 = 0;
+			midi_ringBufferGet(&midiHandle->rxBuf, &status);
+			uint8_t upperNibble = status & 0xf0;
+
+			// Channel Voice messages
+			if(upperNibble != 0xf0)
+			{
+				// Extract the channel from the lower nibble of the status byte
+				// This must be offset by one to account for the zero indexing
+				uint8_t channel = (status & 0x0f) + 1;
+
+				// Program change is the only channel voice message which uses 1 data byte
+				// All other channel voice messages require 2 data bytes to be received
+				switch (upperNibble)
+				{
+				case NoteOff:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					midi_ringBufferGet(&midiHandle->rxBuf, &d2);
+					numBytes += 3;
+					if(midiInChannel == MIDI_CHANNEL_OMNI || midiInChannel == channel)
+					{
+						if(midiHandle->mNoteOffCallback != NULL)
+						{
+							midiHandle->mNoteOffCallback(midiHandle, channel, d1, d2);
+						}
+					}
+					break;
+				case NoteOn:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					midi_ringBufferGet(&midiHandle->rxBuf, &d2);
+					numBytes += 3;
+					if(midiInChannel == MIDI_CHANNEL_OMNI || midiInChannel == channel)
+					{
+						if(midiHandle->mNoteOnCallback != NULL)
+						{
+							midiHandle->mNoteOnCallback(midiHandle, channel, d1, d2);
+						}
+					}
+					break;
+				case AfterTouchPoly:
+
+					break;
+				case ControlChange:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					midi_ringBufferGet(&midiHandle->rxBuf, &d2);
+					numBytes += 3;
+					if(midiInChannel == MIDI_CHANNEL_OMNI || midiInChannel == channel)
+					{
+						if(midiHandle->mControlChangeCallback != NULL)
+						{
+							midiHandle->mControlChangeCallback(midiHandle, channel, d1, d2);
+						}
+					}
+					break;
+				case ProgramChange:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					numBytes += 2;
+					if(midiInChannel == MIDI_CHANNEL_OMNI || midiInChannel == channel)
+					{
+						if(midiHandle->mProgramChangeCallback != NULL)
+						{
+							midiHandle->mProgramChangeCallback(midiHandle, channel, d1);
+						}
+					}
+					break;
+				case AfterTouchChannel:
+
+					break;
+				case PitchBend:
+
+					break;
+				}
+				uint8_t thruPacket[] = {status, d1, d2};
+				for(int i=0; i<numMidiInterfaces; i++)
+				{
+					if(midiHandle->thruHandles[i] != NULL && midiHandle->numThruHandles > 0 && midiHandle->thruHandles[i]->active)
+					{
+						// Check that there is enough room in the queue
+						if(midiHandle->thruHandles[i]->txQueueIndex <  (MIDI_TX_QUEUE_SIZE-1-numBytes))
+						{
+							for(int j=0; j<numBytes; j++)
+							{
+								midiHandle->thruHandles[i]->txQueue[midiHandle->thruHandles[i]->txQueueIndex + j] = thruPacket[j];
+							}
+							midiHandle->thruHandles[i]->txQueueIndex += numBytes;
+						}
+					}
+				}
+			}
+
+			// System Common and System Real-Time messages
+			else
+			{
+				uint8_t thruPacket[3];
+				uint8_t idByte1 = 0, idByte2 = 0, idByte3 = 0;
+				uint16_t beats;
+				switch (status)
+				{
+				case SystemExclusive:
+					midi_ringBufferGet(&midiHandle->rxBuf, &idByte1);
+					midi_ringBufferGet(&midiHandle->rxBuf, &idByte2);
+					midi_ringBufferGet(&midiHandle->rxBuf, &idByte3);
+					// Upon receiving valid SysEx message, check against the SysEx ID for reception
+ 					if(	idByte1 == ((sysExId>>16) & 0xff) &&
+							idByte2 == ((sysExId>>8) & 0xff) &&
+							idByte3 == ((sysExId) & 0xff))
+					{
+						// Get the number of bytes available in the message
+						uint16_t dataLen = midi_numDataRingBuffer(&midiHandle->rxBuf) - 1;
+						if(midiHandle->mSystemExclusiveCallback != NULL)
+						{
+							midiHandle->mSystemExclusiveCallback(midiHandle, dataLen);
+							// Fetch the last byte to handle the SysEx end byte
+						}
+						//midi_numDataRingBuffer(&midiHandle->rxBuf);
+						// TODO thru handling for sysex
+						numBytes = 0;
+					}
+					break;
+				case TimeCodeQuarterFrame:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					if(midiHandle->mTimeCodeQuarterFrameCallback != NULL)
+					{
+						midiHandle->mTimeCodeQuarterFrameCallback(midiHandle, d1);
+					}
+					numBytes = 2;
+					thruPacket[0] = status;
+					thruPacket[1] = d1;
+					break;
+				case SongSelect:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					if(midiHandle->mSongSelectCallback != NULL)
+					{
+						midiHandle->mSongSelectCallback(midiHandle, d1);
+					}
+					numBytes = 2;
+					thruPacket[0] = status;
+					thruPacket[1] = d1;
+					break;
+				case SongPosition:
+					midi_ringBufferGet(&midiHandle->rxBuf, &d1);
+					midi_ringBufferGet(&midiHandle->rxBuf, &d2);
+					beats = (d2 << 8 & 0xff) | (d1 & 0xff);
+					if(midiHandle->mSongPositionCallback != NULL)
+					{
+						midiHandle->mSongPositionCallback(midiHandle, beats);
+					}
+					numBytes = 3;
+					thruPacket[0] = status;
+					thruPacket[1] = d1;
+					thruPacket[2] = d2;
+					break;
+				case TuneRequest:
+					if(midiHandle->mTuneRequestCallback != NULL)
+					{
+						midiHandle->mTuneRequestCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case Clock:
+					if(midiHandle->mClockCallback != NULL)
+					{
+						midiHandle->mClockCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case Start:
+					if(midiHandle->mStartCallback != NULL)
+					{
+						midiHandle->mStartCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case Continue:
+					if(midiHandle->mContinueCallback != NULL)
+					{
+						midiHandle->mContinueCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case Stop:
+					if(midiHandle->mStopCallback != NULL)
+					{
+						midiHandle->mStopCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case ActiveSensing:
+					if(midiHandle->mActiveSensingCallback != NULL)
+					{
+						midiHandle->mActiveSensingCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				case SystemReset:
+					if(midiHandle->mSystemResetCallback != NULL)
+					{
+						midiHandle->mSystemResetCallback(midiHandle);
+					}
+					numBytes = 1;
+					thruPacket[0] = status;
+					break;
+				}
+				for(int i=0; i<numMidiInterfaces; i++)
+				{
+					if(midiHandle->thruHandles[i] != NULL && midiHandle->numThruHandles > 0 && midiHandle->thruHandles[i]->active)
+					{
+						// Check that there is enough room in the queue
+						if(midiHandle->thruHandles[i]->txQueueIndex <  (MIDI_TX_QUEUE_SIZE-1-numBytes))
+						{
+							for(int j=0; j<numBytes; j++)
+							{
+								midiHandle->thruHandles[i]->txQueue[midiHandle->thruHandles[i]->txQueueIndex + j] = thruPacket[j];
+							}
+							midiHandle->thruHandles[i]->txQueueIndex += numBytes;
+						}
+					}
+				}
+			}
+
+			// If there are no new messages, reset the newMessage flag
+			if(midi_ringBufferEmpty(&midiHandle->rxBuf))
+			{
+				midiHandle->newMessage = FALSE;
+			}
+		}
+		for(int i=0; i<numMidiInterfaces; i++)
+		{
+			// Check that the thru handle is valid
+			if( midiHandle->thruHandles[i] != NULL && midiHandle->thruHandles[i]->active
+					&& (midiHandle->thruHandles[i]->direction == MidiOutOnly|| midiHandle->thruHandles[i]->direction == MidiFull))
+			{
+				midi_sendPacket(midiHandle->thruHandles[i]);
+				midiHandle->thruHandles[i]->txQueueIndex = 0;
+			}
+		}
+		return MidiOk;
+	}
+	return MidiNoData;
+	*/
 	return MidiOk;
 }
 
