@@ -1121,7 +1121,11 @@ void midi_rxUartHandler(MidiInterface* midiHandle)
 	// Store the newly read byte in the circular buffer
 	midi_ringBufferPut(&midiHandle->rxBuf, midiHandle->rxRawBuf[0]);
 	// Prepare to read the next byte
-	HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1);
+	if(HAL_UART_Receive_IT(midiHandle->uartHandle, midiHandle->rxRawBuf, 1) != HAL_OK)
+	{
+		HAL_Delay(1);
+		return;
+	}
 	return;
 }
 
@@ -1316,7 +1320,8 @@ void midi_SendSysEx(	MidiInterface *midiHandle, uint8_t* data, uint16_t len, uin
 	// If a transmission is already in process, queue the data up in the txBuf
 	if(midiHandle->txState == MidiBusy)
 	{
-		if((MIDI_TX_QUEUE_SIZE - 1) - midiHandle->txQueueIndex > len)
+		// Check if the SysEx message is too long to fit into the queue
+		if((len + midiHandle->txQueueIndex) > MIDI_TX_QUEUE_SIZE - 1)
 		{
 			return;
 		}
